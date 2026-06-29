@@ -650,7 +650,8 @@
       font-weight: 500;
     }
 
-    .equiv-note {
+    .equiv-note,
+    .replica-note {
       font-size: 11px;
       color: var(--text-muted);
       line-height: 1.55;
@@ -658,7 +659,8 @@
       border-top: 1px solid var(--navy-border);
     }
 
-    .equiv-note strong {
+    .equiv-note strong,
+    .replica-note strong {
       display: block;
       font-size: 9px;
       font-weight: 700;
@@ -1135,14 +1137,14 @@ const SYSTEM_PROMPT = [
   'Follow these rules strictly:',
   '1. PRIMARY: For each provider, recommend the most cost-effective instance for the workload. Hardware may differ across providers — AWS can be significantly cheaper by using A10G (g5/g6) or Inferentia2 (inf2) where Azure/GCP would use A100.',
   '2. EQUIVALENT (optional): If your primary for a provider uses meaningfully different GPU hardware than the other providers\' primaries (e.g. A10G vs A100-80GB), add an equivalent_instance field showing the strict hardware-equivalent option and a one-sentence explanation of why the primary is the better value.',
-  '3. GPU sizing guidance (apply per-provider):',
-  '   • T4/L4/A10G — models ≤13B at FP16; cost-efficient inference; A10G 24GB fits 13B comfortably',
-  '   • A100-40GB  — models 13B–30B at FP16; production inference',
-  '   • A100-80GB  — models 30B–80B at FP16; large-scale inference',
-  '   • H100-80GB  — models >80B; large-scale training; maximum throughput',
-  '4. Right-size: pick the smallest GPU count that fits the model VRAM. Inference does not need H100 unless the model exceeds 80B parameters.',
+  '3. VRAM estimation — always calculate explicitly before selecting a tier:',
+  '   Formula: active_params_billions × 2 = base_VRAM_GB, then × 1.2 for KV cache and activation overhead = total_VRAM_GB',
+  '   Example: "Llama 4 Scout: 17B active × 2 = 34GB + 20% overhead = ~41GB → A10G tier (fits in 2×24GB=48GB)"',
+  '   Always write this full calculation into the gpu_tier field. The explicit VRAM number is what drives tier selection — stating it prevents inconsistency across runs.',
+  '4. Right-size: choose the smallest GPU count in the selected tier where total_GPU_VRAM ≥ total_VRAM_GB. Do not upgrade tiers based on workload type or traffic patterns alone.',
   '5. Ambiguous model names: if the user names a model family without a specific version (e.g. "Llama" not "Llama 4 Scout"), assume the most recent and widely-used version of that family. State the assumed version explicitly in the gpu_tier field (e.g. "Assumed Llama 3.3 70B — A100-80GB class"). Add a consideration telling the user to confirm their specific version, since different versions vary significantly in size and cost.',
-  '6. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
+  '6. AWS over-provisioning: when the smallest available AWS instance holds 3 or more full replicas of the model (replica_count = floor(instance_total_vram_gb / model_vram_gb) ≥ 3), add a replica_info object to the aws recommendation: { "replica_count": N, "model_vram_gb": X, "instance_vram_gb": Y }. In the aws rationale, explain that the effective per-replica cost drops significantly at scale and that multi-replica deployment on a single over-provisioned instance is the standard production pattern for AWS in this case.',
+  '7. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
 ].join('\n');
 
 function buildUserPrompt(workload) {
@@ -1161,7 +1163,7 @@ function buildUserPrompt(workload) {
     '  "workload_summary": "one sentence describing the key requirements",',
     '  "gpu_tier": "minimum capability tier and one-sentence justification",',
     '  "recommendations": {',
-    '    "aws":   { "instance_type": "primary instance type", "gpu_model": "primary GPU model", "rationale": "...", "confidence": "high|medium|low", "equivalent_instance": { "instance_type": "strict hardware-equivalent", "gpu_model": "GPU model", "note": "why primary is better value" } },',
+    '    "aws":   { "instance_type": "primary instance type", "gpu_model": "primary GPU model", "rationale": "...", "confidence": "high|medium|low", "replica_info": { "replica_count": 12, "model_vram_gb": 50, "instance_vram_gb": 640 }, "equivalent_instance": { "instance_type": "strict hardware-equivalent", "gpu_model": "GPU model", "note": "why primary is better value" } },',
     '    "azure": { "instance_type": "e.g. Standard_NC24ads_A100_v4", "gpu_model": "e.g. NVIDIA A100 80GB", "rationale": "...", "confidence": "high|medium|low" },',
     '    "gcp":   { "instance_type": "e.g. a2-highgpu-2g",            "gpu_model": "e.g. NVIDIA A100 40GB", "rationale": "...", "confidence": "high|medium|low" }',
     '  },',
@@ -1392,6 +1394,14 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
         <strong>Hardware equivalent</strong>
         <span class="equiv-mono">${esc(equivType)}</span>${equivFmt ? ` · $${equivFmt.hourly}/hr` : ''} (${esc(equiv.gpu_model ?? '')}) — ${esc(equiv.note ?? '')}
       </div>` : '';
+    const ri = p.rec?.replica_info;
+    const showReplica = ri?.replica_count >= 3 && p.price?.hourlyUSD != null;
+    const replicaEffFmt = showReplica ? fmtUSD(p.price.hourlyUSD / ri.replica_count) : null;
+    const replicaNoteHtml = showReplica ? `
+      <div class="replica-note">
+        <strong>Multi-replica deployment</strong>
+        $${replicaEffFmt.hourly}/hr effective per replica (${ri.replica_count} replicas sharing one instance — ${ri.instance_vram_gb}GB ÷ ~${ri.model_vram_gb}GB per model)
+      </div>` : '';
     return `<div class="pcard ${isWinner ? 'winner' : ''}">
       ${isWinner ? '<div class="winner-tag">Lowest Cost</div>' : ''}
       <div class="pcard-top"><span class="cloud-badge ${p.id}">${p.label}</span></div>
@@ -1407,6 +1417,7 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
         <span class="conf-dot ${conf}"></span>
         <span class="conf-label">${conf.charAt(0).toUpperCase() + conf.slice(1)} confidence</span>
       </div>
+      ${replicaNoteHtml}
       ${equivNoteHtml}
     </div>`;
   }).join('');
