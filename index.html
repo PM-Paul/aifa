@@ -168,6 +168,7 @@
       transition: all 0.14s ease;
       user-select: none;
       background: transparent;
+      position: relative;
     }
 
     .pill-group label:hover {
@@ -181,6 +182,54 @@
       color: var(--teal-light);
       font-weight: 500;
     }
+
+    /* Use-case pill tooltips — CSS only, data-tooltip attribute */
+    .pill-group label[data-tooltip]:hover { z-index: 10; }
+
+    .pill-group label[data-tooltip]::before {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 0;
+      width: 200px;
+      padding: 8px 11px;
+      background: #0b1520;
+      color: #c4d4e4;
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.52;
+      border-radius: 7px;
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 6px 22px rgba(0,0,0,0.55);
+      pointer-events: none;
+      white-space: normal;
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(5px);
+      transition: opacity 0.16s ease, transform 0.16s ease;
+    }
+
+    .pill-group label[data-tooltip]:hover::before {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Arrow pointing down toward the hovered pill */
+    .pill-group label[data-tooltip]::after {
+      content: '';
+      position: absolute;
+      bottom: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: #0b1520;
+      pointer-events: none;
+      z-index: 201;
+      opacity: 0;
+      transition: opacity 0.16s ease;
+    }
+
+    .pill-group label[data-tooltip]:hover::after { opacity: 1; }
 
     /* Checkboxes */
     .checkbox-grid {
@@ -850,13 +899,13 @@
         <div class="section-label">Model</div>
         <div class="pill-group">
           <input type="radio" name="modelspec" id="ms-simple"   value="uc-simple" />
-          <label for="ms-simple">Simple tasks</label>
+          <label for="ms-simple"   data-tooltip="Best for answering questions, sorting content, or summarizing documents. Examples: customer support chatbots, email categorization, document tagging, FAQ bots.">Simple tasks</label>
           <input type="radio" name="modelspec" id="ms-moderate" value="uc-moderate" />
-          <label for="ms-moderate">Moderate tasks</label>
+          <label for="ms-moderate" data-tooltip="Best for writing, analyzing, or explaining content. Examples: drafting emails and reports, code completion, sentiment analysis, product descriptions, data summarization.">Moderate tasks</label>
           <input type="radio" name="modelspec" id="ms-complex"  value="uc-complex" />
-          <label for="ms-complex">Complex tasks</label>
+          <label for="ms-complex"  data-tooltip="Best for deep reasoning, long documents, or specialized domains. Examples: legal contract review, medical record analysis, financial report interpretation, fine-tuned domain models.">Complex tasks</label>
           <input type="radio" name="modelspec" id="ms-frontier" value="uc-frontier" />
-          <label for="ms-frontier">Frontier tasks</label>
+          <label for="ms-frontier" data-tooltip="Best for the most demanding AI workloads requiring cutting-edge models. Examples: advanced research agents, complex multi-step reasoning, state-of-the-art coding assistants, large-scale generative AI applications.">Frontier tasks</label>
           <input type="radio" name="modelspec" id="ms-name"     value="model-name" />
           <label for="ms-name">I know my model name</label>
           <input type="radio" name="modelspec" id="ms-size"     value="model-size" />
@@ -1092,7 +1141,8 @@ const SYSTEM_PROMPT = [
   '   • A100-80GB  — models 30B–80B at FP16; large-scale inference',
   '   • H100-80GB  — models >80B; large-scale training; maximum throughput',
   '4. Right-size: pick the smallest GPU count that fits the model VRAM. Inference does not need H100 unless the model exceeds 80B parameters.',
-  '5. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
+  '5. Ambiguous model names: if the user names a model family without a specific version (e.g. "Llama" not "Llama 4 Scout"), assume the most recent and widely-used version of that family. State the assumed version explicitly in the gpu_tier field (e.g. "Assumed Llama 3.3 70B — A100-80GB class"). Add a consideration telling the user to confirm their specific version, since different versions vary significantly in size and cost.',
+  '6. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
 ].join('\n');
 
 function buildUserPrompt(workload) {
@@ -1464,16 +1514,61 @@ async function runAnalysis() {
 }
 
 // ── Skip links ─────────────────────────────────────────────────────────────────
+// ── Dynamic model-tier tooltips ────────────────────────────────────────────────
+const TOOLTIPS = {
+  default: {
+    'uc-simple':   'For lightweight AI workloads — small models, low traffic, or straightforward tasks. Examples: basic chatbots, document classification, simple text generation, low-volume automation.',
+    'uc-moderate': 'For everyday production AI workloads — mid-size models handling regular business tasks. Examples: customer-facing assistants, code helpers, content generation, data analysis pipelines.',
+    'uc-complex':  'For demanding AI workloads requiring larger models or specialized knowledge. Examples: legal and medical AI, domain-specific fine-tuned models, high-volume production inference, complex reasoning tasks.',
+    'uc-frontier': 'For the most demanding AI workloads using cutting-edge large models. Examples: advanced AI agents, state-of-the-art reasoning, large-scale model training, high-throughput enterprise inference.',
+  },
+  Inference: {
+    'uc-simple':   'Best for answering questions, sorting content, or summarizing documents. Examples: customer support chatbots, email categorization, document tagging, FAQ bots.',
+    'uc-moderate': 'Best for writing, analyzing, or explaining content. Examples: drafting emails and reports, code completion, sentiment analysis, product descriptions, data summarization.',
+    'uc-complex':  'Best for deep reasoning, long documents, or specialized domains. Examples: legal contract review, medical record analysis, financial report interpretation, fine-tuned domain models.',
+    'uc-frontier': 'Best for the most demanding AI workloads requiring cutting-edge models. Examples: advanced research agents, complex multi-step reasoning, state-of-the-art coding assistants, large-scale generative AI applications.',
+  },
+  Training: {
+    'uc-simple':   'Fine-tuning a small model on a domain-specific dataset. Examples: adapting a 7B model for customer support, training a text classifier, fine-tuning for a specific writing style.',
+    'uc-moderate': 'Training or fine-tuning a mid-size model. Examples: fine-tuning Llama for a specialized domain, training a code generation model, adapting a 13B model on proprietary data.',
+    'uc-complex':  'Training a larger model or fine-tuning with a large dataset. Examples: fine-tuning a 30B+ model, training a domain-specific legal or medical model, large-scale instruction tuning.',
+    'uc-frontier': 'Pre-training or large-scale fine-tuning of very large models. Examples: training a model from scratch, massive instruction tuning runs, large-scale RLHF training.',
+  },
+  Both: {
+    'uc-simple':   'Best for lightweight inference tasks and small fine-tuning jobs. Examples: basic chatbots, document classification, simple text generation.',
+    'uc-moderate': 'Best for production inference and mid-size fine-tuning. Examples: customer assistants, code helpers, adapting models to your domain.',
+    'uc-complex':  'Best for demanding inference and larger fine-tuning runs. Examples: legal and medical AI, domain-specific fine-tuned models, complex reasoning tasks.',
+    'uc-frontier': 'Best for cutting-edge inference and large-scale training. Examples: advanced AI agents, large model fine-tuning, high-throughput enterprise applications.',
+  },
+};
+
+function setModelTooltips(workload) {
+  const map = TOOLTIPS[workload] ?? TOOLTIPS.default;
+  document.querySelectorAll('input[name="modelspec"]').forEach(radio => {
+    const tip = map[radio.value];
+    if (tip) {
+      const label = document.querySelector(`label[for="${radio.id}"]`);
+      if (label) label.dataset.tooltip = tip;
+    }
+  });
+}
+
 document.querySelectorAll('.skip-link').forEach(el => {
   el.addEventListener('click', () => {
     const name = el.dataset.name, type = el.dataset.type;
     if (name) {
       document.querySelectorAll(`input[name="${name}"]`).forEach(r => r.checked = false);
       if (name === 'modelspec') setModelReveal(null);
+      if (name === 'workload')  setModelTooltips(null);
     }
     if (type) document.querySelectorAll(`input[name="${type}"]`).forEach(c => c.checked = false);
   });
 });
+
+document.querySelectorAll('input[name="workload"]').forEach(r => {
+  r.addEventListener('change', () => setModelTooltips(r.value));
+});
+setModelTooltips(null); // apply default tooltips on load
 
 // ── Compliance None logic ──────────────────────────────────────────────────────
 const noneBox = document.getElementById('cb-none');
