@@ -1,0 +1,1542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AIFA — AI Factory Advisor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="config.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:         #0D1B2A;
+      --navy-panel:   #0F2030;
+      --navy-card:    #122639;
+      --navy-deep:    #0A1520;
+      --navy-border:  #1E3A50;
+      --navy-border2: #254A62;
+      --teal:         #0D9488;
+      --teal-hover:   #0B7B71;
+      --teal-light:   #2DD4BF;
+      --teal-dim:     rgba(13, 148, 136, 0.13);
+      --teal-glow:    rgba(13, 148, 136, 0.25);
+      --text-pri:     #F1F5F9;
+      --text-sec:     #8BA4BA;
+      --text-muted:   #4A6480;
+      --green:        #10B981;
+      --amber:        #F59E0B;
+      --red:          #EF4444;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--navy);
+      color: var(--text-pri);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── App shell ─────────────────────────────────────── */
+    .app {
+      display: flex;
+      height: 100vh;
+    }
+
+    /* ── Panels ────────────────────────────────────────── */
+    .panel {
+      overflow-y: auto;
+      height: 100vh;
+    }
+
+    .panel-intake {
+      width: 360px;
+      min-width: 320px;
+      flex-shrink: 0;
+      background: var(--navy-panel);
+      border-right: 1px solid var(--navy-border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-results {
+      flex: 1;
+      background: var(--navy);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Logo ──────────────────────────────────────────── */
+    .logo-area {
+      padding: 24px 22px 20px;
+      border-bottom: 1px solid var(--navy-border);
+      flex-shrink: 0;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 3px;
+    }
+
+    .logo-icon {
+      width: 30px;
+      height: 30px;
+      background: var(--teal);
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .logo-icon svg {
+      width: 16px;
+      height: 16px;
+      fill: none;
+      stroke: #fff;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .logo-text {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-pri);
+    }
+
+    .logo-text em {
+      font-style: normal;
+      color: var(--teal-light);
+    }
+
+    .logo-sub {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      font-weight: 500;
+      padding-left: 40px;
+    }
+
+    /* ── Form ──────────────────────────────────────────── */
+    .form-body {
+      flex: 1;
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      overflow-y: auto;
+    }
+
+    .form-section {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .section-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-sec);
+    }
+
+    /* Pill radios */
+    .pill-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .pill-group input[type="radio"] { display: none; }
+
+    .pill-group label {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--navy-border);
+      font-size: 12.5px;
+      color: var(--text-sec);
+      cursor: pointer;
+      transition: all 0.14s ease;
+      user-select: none;
+      background: transparent;
+    }
+
+    .pill-group label:hover {
+      border-color: var(--navy-border2);
+      color: var(--text-pri);
+    }
+
+    .pill-group input[type="radio"]:checked + label {
+      background: var(--teal-dim);
+      border-color: var(--teal);
+      color: var(--teal-light);
+      font-weight: 500;
+    }
+
+    /* Checkboxes */
+    .checkbox-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+    }
+
+    .cb-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      padding: 3px 0;
+    }
+
+    .cb-item input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 4px;
+      border: 1px solid var(--navy-border);
+      background: transparent;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all 0.14s;
+      position: relative;
+    }
+
+    .cb-item input[type="checkbox"]:checked {
+      background: var(--teal);
+      border-color: var(--teal);
+    }
+
+    .cb-item input[type="checkbox"]:checked::after {
+      content: '';
+      position: absolute;
+      left: 4px;
+      top: 1.5px;
+      width: 4px;
+      height: 8px;
+      border: 2px solid #fff;
+      border-top: none;
+      border-left: none;
+      transform: rotate(45deg);
+    }
+
+    .cb-item span {
+      font-size: 12.5px;
+      color: var(--text-sec);
+      user-select: none;
+    }
+
+    .cb-item:hover span { color: var(--text-pri); }
+
+    /* Skip link */
+    .skip-link {
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.14s;
+      width: fit-content;
+    }
+    .skip-link:hover { color: var(--text-sec); }
+
+    /* ── Submit ────────────────────────────────────────── */
+    .form-footer {
+      padding: 14px 22px 22px;
+      border-top: 1px solid var(--navy-border);
+      flex-shrink: 0;
+    }
+
+    .btn-analyze {
+      width: 100%;
+      padding: 11px 18px;
+      background: var(--teal);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: inherit;
+      transition: background 0.14s, opacity 0.14s, transform 0.1s;
+      letter-spacing: -0.01em;
+    }
+
+    .btn-analyze:hover:not(:disabled) { background: var(--teal-hover); }
+    .btn-analyze:active:not(:disabled) { transform: scale(0.99); }
+    .btn-analyze:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .btn-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      display: none;
+      flex-shrink: 0;
+    }
+
+    .btn-analyze.is-loading .btn-spinner { display: block; }
+
+    /* ── Results: shared ───────────────────────────────── */
+    .state-panel {
+      display: none;
+      flex: 1;
+    }
+
+    .state-panel.active { display: flex; }
+
+    /* ── Empty state ───────────────────────────────────── */
+    #state-empty {
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .empty-icon {
+      width: 60px;
+      height: 60px;
+      background: var(--navy-card);
+      border: 1px solid var(--navy-border);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .empty-icon svg {
+      width: 28px;
+      height: 28px;
+      stroke: var(--text-muted);
+      fill: none;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .empty-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-sec);
+    }
+
+    .empty-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      max-width: 280px;
+      line-height: 1.65;
+    }
+
+    /* ── Loading state ─────────────────────────────────── */
+    #state-loading {
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 36px;
+      padding: 40px;
+    }
+
+    .loading-head { text-align: center; }
+
+    .loading-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-pri);
+      margin-bottom: 6px;
+    }
+
+    .loading-sub {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 280px;
+    }
+
+    .step-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .step-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-dot.pending {
+      border: 1.5px solid var(--navy-border);
+    }
+
+    .step-dot.active {
+      background: var(--teal);
+      animation: pulse-dot 1.3s ease-in-out infinite;
+    }
+
+    .step-dot.done {
+      background: var(--teal);
+    }
+
+    .step-dot.done::after {
+      content: '';
+      width: 4px;
+      height: 8px;
+      border: 2px solid #fff;
+      border-top: none;
+      border-left: none;
+      transform: rotate(45deg) translate(0, -1px);
+    }
+
+    .step-dot.active::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.8);
+    }
+
+    .step-text {
+      font-size: 13px;
+      transition: color 0.25s;
+    }
+
+    .step-text.pending  { color: var(--text-muted); }
+    .step-text.active   { color: var(--text-pri); font-weight: 500; }
+    .step-text.done     { color: var(--text-sec); }
+
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 0 0 var(--teal-glow); }
+      50%       { box-shadow: 0 0 0 7px transparent; }
+    }
+
+    /* ── Results state ─────────────────────────────────── */
+    #state-results {
+      flex-direction: column;
+      gap: 28px;
+      padding: 36px 40px;
+      animation: fade-up 0.35s ease both;
+    }
+
+    .results-eyebrow {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--teal);
+      margin-bottom: 6px;
+    }
+
+    .results-summary {
+      font-size: 14.5px;
+      font-weight: 500;
+      color: var(--text-pri);
+      line-height: 1.55;
+    }
+
+    .gpu-tier-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0 20px;
+      border-bottom: 1px solid var(--navy-border);
+    }
+
+    .gpu-tier-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .gpu-tier-value {
+      font-size: 12px;
+      color: var(--text-sec);
+    }
+
+    /* Provider cards */
+    .cards-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .pcard {
+      background: var(--navy-card);
+      border: 1px solid var(--navy-border);
+      border-radius: 12px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .pcard.winner {
+      border-color: var(--teal);
+    }
+
+    .winner-tag {
+      position: absolute;
+      top: 0; right: 0;
+      background: var(--teal);
+      color: #fff;
+      font-size: 9.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      padding: 3px 10px;
+      border-bottom-left-radius: 8px;
+    }
+
+    .pcard-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .cloud-badge {
+      font-size: 10.5px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 5px;
+      letter-spacing: 0.04em;
+    }
+
+    .cloud-badge.aws   { color: #F6A623; background: rgba(246,166,35,0.12); border: 1px solid rgba(246,166,35,0.25); }
+    .cloud-badge.azure { color: #60A5FA; background: rgba(96,165,250,0.12); border: 1px solid rgba(96,165,250,0.25); }
+    .cloud-badge.gcp   { color: #7DAEFF; background: rgba(125,174,255,0.12); border: 1px solid rgba(125,174,255,0.25); }
+
+    .price-block {}
+
+    .price-main {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text-pri);
+      letter-spacing: -0.025em;
+      line-height: 1;
+    }
+
+    .price-main sub {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-muted);
+      vertical-align: baseline;
+      letter-spacing: 0;
+    }
+
+    .price-monthly {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .instance-pill {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 11.5px;
+      color: var(--text-pri);
+      background: var(--navy-deep);
+      border: 1px solid var(--navy-border);
+      border-radius: 5px;
+      padding: 4px 8px;
+      display: inline-block;
+      font-weight: 500;
+    }
+
+    .gpu-spec {
+      font-size: 11.5px;
+      color: var(--text-sec);
+      margin-top: 4px;
+    }
+
+    .conf-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .conf-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .conf-dot.high   { background: var(--green); }
+    .conf-dot.medium { background: var(--amber); }
+    .conf-dot.low    { background: var(--red); }
+
+    .conf-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .equiv-note {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.55;
+      padding-top: 10px;
+      border-top: 1px solid var(--navy-border);
+    }
+
+    .equiv-note strong {
+      display: block;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+
+    .equiv-mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px;
+      color: var(--text-sec);
+      font-weight: 500;
+    }
+
+    /* Section headings */
+    .section-head {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--text-sec);
+      margin-bottom: 12px;
+    }
+
+    /* Rationale */
+    .rationale-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .rationale-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .rationale-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      margin-top: 2px;
+      letter-spacing: 0.04em;
+    }
+
+    .rationale-text {
+      font-size: 12.5px;
+      color: var(--text-sec);
+      line-height: 1.65;
+    }
+
+    /* Considerations */
+    .considerations {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .consideration {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .consideration-bullet {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--teal);
+      flex-shrink: 0;
+      margin-top: 7px;
+    }
+
+    .consideration-text {
+      font-size: 12.5px;
+      color: var(--text-sec);
+      line-height: 1.65;
+    }
+
+    /* ── Exact model size reveal ────────────────────────── */
+    .exact-size-wrap {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.25s ease, opacity 0.25s ease;
+      opacity: 0;
+    }
+
+    .exact-size-wrap.visible {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+
+    .exact-size-inner {
+      overflow: hidden;
+    }
+
+    .exact-size-field {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding-top: 7px;
+    }
+
+    .exact-size-field input[type="number"],
+    .exact-size-field input[type="text"] {
+      padding: 5px 9px;
+      background: var(--navy-deep);
+      border: 1px solid var(--navy-border);
+      border-radius: 6px;
+      color: var(--text-pri);
+      font-size: 12.5px;
+      outline: none;
+      transition: border-color 0.14s;
+    }
+
+    .exact-size-field input[type="number"] {
+      width: 90px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 500;
+      -moz-appearance: textfield;
+    }
+
+    .exact-size-field input[type="text"] {
+      flex: 1;
+      font-family: inherit;
+    }
+
+    .exact-size-field input[type="number"]::-webkit-inner-spin-button,
+    .exact-size-field input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+    .exact-size-field input[type="number"]:focus,
+    .exact-size-field input[type="text"]:focus {
+      border-color: var(--teal);
+    }
+
+    .exact-size-field .unit-label {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .model-size-note {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 5px;
+    }
+
+    /* ── Animations ─────────────────────────────────────── */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes fade-up {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Scrollbars ─────────────────────────────────────── */
+    ::-webkit-scrollbar       { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--navy-border); border-radius: 3px; }
+
+    /* ── Results top bar ─────────────────────────────────── */
+    .results-top-bar {
+      margin-bottom: -4px;
+    }
+
+    .btn-new-analysis {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      padding: 0;
+      transition: color 0.14s;
+    }
+
+    .btn-new-analysis:hover { color: var(--text-sec); }
+
+    .price-na {
+      font-size: 18px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* ── Responsive ─────────────────────────────────────── */
+    @media (max-width: 860px) {
+      .app { flex-direction: column; height: auto; overflow: auto; }
+      .panel, .panel-intake, .panel-results { height: auto; overflow: visible; }
+      .panel-intake { width: 100%; }
+      .panel-results { min-height: 60vh; }
+      .cards-row { grid-template-columns: 1fr; }
+      #state-empty, #state-loading { min-height: 280px; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ═══════════════ LEFT: INTAKE ═══════════════ -->
+  <aside class="panel panel-intake">
+
+    <div class="logo-area">
+      <div class="logo-row">
+        <div class="logo-icon">
+          <svg viewBox="0 0 20 20">
+            <polyline points="1,15 6,8 10,11 14,5 19,5"/>
+            <polyline points="14,5 19,5 19,10"/>
+          </svg>
+        </div>
+        <div class="logo-text">AI<em>FA</em></div>
+      </div>
+      <div class="logo-sub">AI Factory Advisor</div>
+    </div>
+
+    <div class="form-body">
+
+      <!-- Workload Type -->
+      <div class="form-section">
+        <div class="section-label">Workload Type</div>
+        <div class="pill-group">
+          <input type="radio" name="workload" id="wl-train" value="Training" />
+          <label for="wl-train">Training</label>
+          <input type="radio" name="workload" id="wl-infer" value="Inference" />
+          <label for="wl-infer">Inference</label>
+          <input type="radio" name="workload" id="wl-both" value="Both" />
+          <label for="wl-both">Both</label>
+        </div>
+        <span class="skip-link" data-name="workload">Skip / I don't know</span>
+      </div>
+
+      <!-- Model -->
+      <div class="form-section">
+        <div class="section-label">Model</div>
+        <div class="pill-group">
+          <input type="radio" name="modelspec" id="ms-simple"   value="uc-simple" />
+          <label for="ms-simple">Simple tasks</label>
+          <input type="radio" name="modelspec" id="ms-moderate" value="uc-moderate" />
+          <label for="ms-moderate">Moderate tasks</label>
+          <input type="radio" name="modelspec" id="ms-complex"  value="uc-complex" />
+          <label for="ms-complex">Complex tasks</label>
+          <input type="radio" name="modelspec" id="ms-frontier" value="uc-frontier" />
+          <label for="ms-frontier">Frontier tasks</label>
+          <input type="radio" name="modelspec" id="ms-name"     value="model-name" />
+          <label for="ms-name">I know my model name</label>
+          <input type="radio" name="modelspec" id="ms-size"     value="model-size" />
+          <label for="ms-size">I know my model size</label>
+        </div>
+        <div class="exact-size-wrap" id="model-name-wrap">
+          <div class="exact-size-inner">
+            <div class="exact-size-field">
+              <input type="text" id="model-name-input" placeholder="e.g. Llama 4 Scout, DeepSeek V3" />
+            </div>
+          </div>
+        </div>
+        <div class="exact-size-wrap" id="model-size-wrap">
+          <div class="exact-size-inner">
+            <div class="exact-size-field">
+              <input type="number" id="model-size-input" min="1" placeholder="e.g. 13" />
+              <span class="unit-label">billion parameters</span>
+            </div>
+            <div class="model-size-note">For MoE models, enter active parameters, not total</div>
+          </div>
+        </div>
+        <span class="skip-link" data-name="modelspec">Skip / I don't know</span>
+      </div>
+
+      <!-- Scale Pattern -->
+      <div class="form-section">
+        <div class="section-label">Scale Pattern</div>
+        <div class="pill-group">
+          <input type="radio" name="scale" id="sc-steady" value="Steady-state" />
+          <label for="sc-steady">Steady-state</label>
+          <input type="radio" name="scale" id="sc-spiky" value="Variable / Spiky" />
+          <label for="sc-spiky">Variable / Spiky</label>
+          <input type="radio" name="scale" id="sc-batch" value="Batch" />
+          <label for="sc-batch">Batch</label>
+        </div>
+        <span class="skip-link" data-name="scale">Skip / I don't know</span>
+      </div>
+
+      <!-- Latency -->
+      <div class="form-section">
+        <div class="section-label">Latency Requirement</div>
+        <div class="pill-group">
+          <input type="radio" name="latency" id="lt-rt" value="Real-time" />
+          <label for="lt-rt">Real-time</label>
+          <input type="radio" name="latency" id="lt-nr" value="Near real-time" />
+          <label for="lt-nr">Near real-time</label>
+          <input type="radio" name="latency" id="lt-ba" value="Batch / Async" />
+          <label for="lt-ba">Batch / Async</label>
+        </div>
+        <span class="skip-link" data-name="latency">Skip / I don't know</span>
+      </div>
+
+      <!-- Compliance -->
+      <div class="form-section">
+        <div class="section-label">Compliance Requirements</div>
+        <div class="checkbox-grid">
+          <label class="cb-item"><input type="checkbox" name="compliance" value="SOC 2"   /><span>SOC 2</span></label>
+          <label class="cb-item"><input type="checkbox" name="compliance" value="GDPR"    /><span>GDPR</span></label>
+          <label class="cb-item"><input type="checkbox" name="compliance" value="HIPAA"   /><span>HIPAA</span></label>
+          <label class="cb-item"><input type="checkbox" name="compliance" value="FedRAMP" /><span>FedRAMP</span></label>
+          <label class="cb-item"><input type="checkbox" name="compliance" value="PCI DSS" /><span>PCI DSS</span></label>
+          <label class="cb-item"><input type="checkbox" name="compliance" value="None" id="cb-none" /><span>None</span></label>
+        </div>
+        <span class="skip-link" data-type="compliance">Skip / I don't know</span>
+      </div>
+
+    </div><!-- /form-body -->
+
+    <div class="form-footer">
+      <button class="btn-analyze" id="analyze-btn">
+        <span class="btn-spinner"></span>
+        <span id="btn-label">Analyze My Workload</span>
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- ═══════════════ RIGHT: RESULTS ═══════════════ -->
+  <main class="panel panel-results">
+
+    <!-- Empty -->
+    <div class="state-panel active" id="state-empty">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2.5"/>
+          <line x1="3" y1="9"  x2="21" y2="9"/>
+          <line x1="9" y1="9"  x2="9"  y2="21"/>
+          <line x1="12" y1="13" x2="17" y2="13"/>
+          <line x1="12" y1="16.5" x2="15" y2="16.5"/>
+          <line x1="5"  y1="13" x2="6"  y2="13"/>
+          <line x1="5"  y1="16.5" x2="7" y2="16.5"/>
+        </svg>
+      </div>
+      <div class="empty-title">Your cost comparison will appear here</div>
+      <div class="empty-desc">Configure your workload on the left and click "Analyze My Workload" to get a live multi-cloud GPU cost comparison.</div>
+    </div>
+
+    <!-- Loading -->
+    <div class="state-panel" id="state-loading">
+      <div class="loading-head">
+        <div class="loading-title">Analyzing your workload</div>
+        <div class="loading-sub">Querying live pricing from AWS, Azure, and GCP…</div>
+      </div>
+      <div class="step-list" id="step-list"></div>
+    </div>
+
+    <!-- Results -->
+    <div class="state-panel" id="state-results"></div>
+
+  </main>
+</div>
+
+<script>
+// ── Constants ─────────────────────────────────────────────────────────────────
+const STEPS = [
+  'Analyzing workload parameters',
+  'Fetching AWS pricing data',
+  'Fetching Azure pricing data',
+  'Fetching GCP pricing data',
+  'Generating recommendation',
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+function showState(id) {
+  document.querySelectorAll('.state-panel').forEach(el => el.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function resetToEmpty() { showState('state-empty'); }
+
+// ── Step rendering ─────────────────────────────────────────────────────────────
+let _step = -1;
+
+function advanceTo(n) {
+  if (n > _step) { _step = n; renderSteps(n); }
+}
+
+function renderSteps(active) {
+  document.getElementById('step-list').innerHTML = STEPS.map((label, i) => {
+    const s = i < active ? 'done' : i === active ? 'active' : 'pending';
+    return `<div class="step-row">
+      <div class="step-dot ${s}"></div>
+      <span class="step-text ${s}">${label}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Form collection ────────────────────────────────────────────────────────────
+
+// Use-case descriptions sent to Claude as workload context.
+// The task-complexity framing gives Claude enough signal to pick the right GPU
+// tier without requiring users to know their model's parameter count.
+const USE_CASE_DESCRIPTIONS = {
+  'uc-simple': {
+    text: 'Simple tasks: classification, summarization, basic Q&A.',
+    examples: 'Use cases include customer support automation, document tagging, and semantic search.',
+    tier: 'Cost-efficient inference; smaller models (≤7B parameters) are typically sufficient.',
+  },
+  'uc-moderate': {
+    text: 'Moderate tasks: text generation, data analysis, coding assistance.',
+    examples: 'Use cases include content creation, data analysis pipelines, and coding copilots.',
+    tier: 'Production inference; mid-range models (7B–30B parameters) typical.',
+  },
+  'uc-complex': {
+    text: 'Complex tasks: multi-step reasoning, long-document processing, fine-tuned domain models.',
+    examples: 'Use cases include legal analysis, medical record summarization, and specialized domain Q&A.',
+    tier: 'High-capability inference; larger models (30B–100B parameters) typical.',
+  },
+  'uc-frontier': {
+    text: 'Frontier tasks: cutting-edge reasoning, agentic pipelines, very large models.',
+    examples: 'Use cases include research, complex multi-agent systems, and state-of-the-art generation.',
+    tier: 'Maximum capability; largest available models (100B+ parameters) or training runs.',
+  },
+};
+
+function collectForm() {
+  const wl      = document.querySelector('input[name="workload"]:checked')?.value ?? null;
+  const msVal   = document.querySelector('input[name="modelspec"]:checked')?.value ?? null;
+  let modelspec = null;
+  if (msVal === 'model-name') {
+    const v = document.getElementById('model-name-input').value.trim();
+    if (v) modelspec = { type: 'name', value: v };
+  } else if (msVal === 'model-size') {
+    const v = document.getElementById('model-size-input').value.trim();
+    if (v) modelspec = { type: 'size', value: v };
+  } else if (msVal) {
+    modelspec = { type: 'usecase', value: msVal };
+  }
+  const scale   = document.querySelector('input[name="scale"]:checked')?.value ?? null;
+  const latency = document.querySelector('input[name="latency"]:checked')?.value ?? null;
+  const checked = [...document.querySelectorAll('input[name="compliance"]:checked')].map(c => c.value);
+  return { wl, modelspec, scale, latency, compliance: checked.filter(v => v !== 'None'), noCompliance: checked.includes('None') };
+}
+
+function buildWorkloadDescription({ wl, modelspec, scale, latency, compliance, noCompliance }) {
+  const parts = [];
+  if (wl) parts.push(`This is a ${wl.toLowerCase()} workload.`);
+
+  if (modelspec) {
+    if (modelspec.type === 'usecase') {
+      const uc = USE_CASE_DESCRIPTIONS[modelspec.value];
+      if (uc) parts.push(`${uc.text} ${uc.examples} ${uc.tier}`);
+    } else if (modelspec.type === 'name') {
+      parts.push(`Model: ${modelspec.value}.`);
+    } else if (modelspec.type === 'size') {
+      parts.push(`Model size: ${modelspec.value} billion parameters.`);
+    }
+  }
+
+  if (scale)   parts.push(`Traffic pattern is ${scale.toLowerCase()}.`);
+  if (latency) parts.push(`Latency requirement: ${latency.toLowerCase()}.`);
+  if (compliance.length) parts.push(`Compliance requirements: ${compliance.join(', ')}.`);
+  else if (noCompliance) parts.push('No compliance requirements.');
+  return parts.length ? parts.join(' ') : 'General AI workload — no specific constraints provided.';
+}
+
+// ── HTML escape ────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Anthropic API (direct browser fetch) ──────────────────────────────────────
+const SYSTEM_PROMPT = [
+  'You are a cloud infrastructure advisor specializing in GPU compute for AI workloads.',
+  '',
+  'Follow these rules strictly:',
+  '1. PRIMARY: For each provider, recommend the most cost-effective instance for the workload. Hardware may differ across providers — AWS can be significantly cheaper by using A10G (g5/g6) or Inferentia2 (inf2) where Azure/GCP would use A100.',
+  '2. EQUIVALENT (optional): If your primary for a provider uses meaningfully different GPU hardware than the other providers\' primaries (e.g. A10G vs A100-80GB), add an equivalent_instance field showing the strict hardware-equivalent option and a one-sentence explanation of why the primary is the better value.',
+  '3. GPU sizing guidance (apply per-provider):',
+  '   • T4/L4/A10G — models ≤13B at FP16; cost-efficient inference; A10G 24GB fits 13B comfortably',
+  '   • A100-40GB  — models 13B–30B at FP16; production inference',
+  '   • A100-80GB  — models 30B–80B at FP16; large-scale inference',
+  '   • H100-80GB  — models >80B; large-scale training; maximum throughput',
+  '4. Right-size: pick the smallest GPU count that fits the model VRAM. Inference does not need H100 unless the model exceeds 80B parameters.',
+  '5. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
+].join('\n');
+
+function buildUserPrompt(workload) {
+  return [
+    'Analyze this AI workload and recommend one GPU instance per cloud provider.',
+    '',
+    workload,
+    '',
+    'Instructions:',
+    '- For each provider, choose the most cost-effective instance. Providers may use different hardware.',
+    '- Add equivalent_instance when a provider\'s primary uses a different GPU tier than the other two providers\' primaries.',
+    '- Omit equivalent_instance entirely if all providers\' primaries use the same GPU tier.',
+    '',
+    'Respond with this exact JSON:',
+    '{',
+    '  "workload_summary": "one sentence describing the key requirements",',
+    '  "gpu_tier": "minimum capability tier and one-sentence justification",',
+    '  "recommendations": {',
+    '    "aws":   { "instance_type": "primary instance type", "gpu_model": "primary GPU model", "rationale": "...", "confidence": "high|medium|low", "equivalent_instance": { "instance_type": "strict hardware-equivalent", "gpu_model": "GPU model", "note": "why primary is better value" } },',
+    '    "azure": { "instance_type": "e.g. Standard_NC24ads_A100_v4", "gpu_model": "e.g. NVIDIA A100 80GB", "rationale": "...", "confidence": "high|medium|low" },',
+    '    "gcp":   { "instance_type": "e.g. a2-highgpu-2g",            "gpu_model": "e.g. NVIDIA A100 40GB", "rationale": "...", "confidence": "high|medium|low" }',
+    '  },',
+    '  "considerations": ["..."]',
+    '}',
+  ].join('\n');
+}
+
+async function callAnthropic(workload) {
+  const key = window.AIFA_ANTHROPIC_KEY;
+  if (!key) throw new Error('ANTHROPIC_API_KEY not found — run: node gen-config.js, then reload.');
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 3000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: buildUserPrompt(workload) }],
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(`Anthropic API ${response.status}: ${err.error?.message ?? response.statusText}`);
+  }
+  const data = await response.json();
+  const textBlock = data.content?.find(b => b.type === 'text');
+  if (!textBlock) throw new Error('No text block in Anthropic response');
+  const raw = textBlock.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+  return JSON.parse(raw);
+}
+
+// ── AWS Pricing ────────────────────────────────────────────────────────────────
+const AWS_PRICING_URL =
+  'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json';
+
+async function fetchAwsPricingData() {
+  const r = await fetch(AWS_PRICING_URL);
+  if (!r.ok) throw new Error(`AWS pricing HTTP ${r.status}`);
+  return r.json();
+}
+
+function lookupAwsPrice(data, instanceType) {
+  for (const [sku, product] of Object.entries(data.products ?? {})) {
+    const a = product.attributes ?? {};
+    if (
+      product.productFamily === 'Compute Instance' &&
+      a.instanceType === instanceType &&
+      a.operatingSystem === 'Linux' &&
+      a.tenancy === 'Shared' &&
+      a.preInstalledSw === 'NA'
+    ) {
+      const onDemand = data.terms?.OnDemand?.[sku];
+      if (!onDemand) continue;
+      for (const term of Object.values(onDemand)) {
+        for (const dim of Object.values(term.priceDimensions ?? {})) {
+          if (dim.unit === 'Hrs') {
+            const price = parseFloat(dim.pricePerUnit?.USD ?? '0');
+            if (price > 0) return { hourlyUSD: price, vcpu: a.vcpu, memory: a.memory, gpu: a.gpu, gpuMemory: a.gpuMemory };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// ── Azure Pricing ──────────────────────────────────────────────────────────────
+function normalizeAzureSkuName(raw) {
+  const name = (raw ?? '').startsWith('Standard_') ? raw : `Standard_${raw}`;
+  return name.split(/[\s(,]/)[0].trim();
+}
+
+async function lookupAzurePrice(rawInstanceType) {
+  const armSkuName = normalizeAzureSkuName(rawInstanceType);
+  // Routed through local proxy in serve.js — Azure blocks direct browser CORS
+  const r = await fetch(`/api/azure-price?instance=${encodeURIComponent(rawInstanceType)}`);
+  if (!r.ok) throw new Error(`Azure pricing proxy HTTP ${r.status}`);
+  const data = await r.json();
+  const candidates = (data.Items ?? []).filter(item =>
+    item.type === 'Consumption' && item.unitOfMeasure === '1 Hour' &&
+    !item.skuName.includes('Spot') && !item.skuName.includes('Windows') && !item.skuName.includes('Low Priority')
+  );
+  if (!candidates.length) return null;
+  const best = candidates.sort((a, b) => a.retailPrice - b.retailPrice)[0];
+  return { hourlyUSD: best.retailPrice, armSkuName };
+}
+
+// ── GCP Pricing ────────────────────────────────────────────────────────────────
+const GCP_CE_SERVICE_ID = '6F81-5844-456A';
+const GCP_SKU_PATTERNS = [
+  { re: /^nvidia tesla a100 80gb gpu running in americas$/i,  key: 'gpu_a100_80gb' },
+  { re: /^nvidia tesla a100 gpu running in americas$/i,        key: 'gpu_a100_40gb' },
+  { re: /^nvidia h100 80gb gpu running in americas$/i,         key: 'gpu_h100' },
+  { re: /^nvidia l4 gpu running in americas$/i,                key: 'gpu_l4' },
+  { re: /^a2 instance core running in americas$/i,             key: 'a2_core' },
+  { re: /^a2 instance ram running in americas$/i,              key: 'a2_ram' },
+  { re: /^a3 instance core running in americas$/i,             key: 'a3_core' },
+  { re: /^a3 instance ram running in americas$/i,              key: 'a3_ram' },
+  { re: /^g2 instance core running in americas$/i,             key: 'g2_core' },
+  { re: /^g2 instance ram running in americas$/i,              key: 'g2_ram' },
+];
+const GCP_FAMILY_COMPONENTS = {
+  a2:      { coreKey: 'a2_core', ramKey: 'a2_ram' },
+  a2ultra: { coreKey: 'a2_core', ramKey: 'a2_ram' },
+  a3:      { coreKey: 'a3_core', ramKey: 'a3_ram' },
+  g2:      { coreKey: 'g2_core', ramKey: 'g2_ram' },
+};
+const GCP_INSTANCE_SPECS = {
+  'a2-highgpu-1g':  { vcpu: 12,  ramGb: 85,   gpus: 1,  gpuModel: 'NVIDIA A100 40GB', gpuKey: 'gpu_a100_40gb', family: 'a2' },
+  'a2-highgpu-2g':  { vcpu: 24,  ramGb: 170,  gpus: 2,  gpuModel: 'NVIDIA A100 40GB', gpuKey: 'gpu_a100_40gb', family: 'a2' },
+  'a2-highgpu-4g':  { vcpu: 48,  ramGb: 340,  gpus: 4,  gpuModel: 'NVIDIA A100 40GB', gpuKey: 'gpu_a100_40gb', family: 'a2' },
+  'a2-highgpu-8g':  { vcpu: 96,  ramGb: 680,  gpus: 8,  gpuModel: 'NVIDIA A100 40GB', gpuKey: 'gpu_a100_40gb', family: 'a2' },
+  'a2-megagpu-16g': { vcpu: 96,  ramGb: 1360, gpus: 16, gpuModel: 'NVIDIA A100 40GB', gpuKey: 'gpu_a100_40gb', family: 'a2' },
+  'a2-ultragpu-1g': { vcpu: 12,  ramGb: 170,  gpus: 1,  gpuModel: 'NVIDIA A100 80GB', gpuKey: 'gpu_a100_80gb', family: 'a2ultra' },
+  'a2-ultragpu-2g': { vcpu: 24,  ramGb: 340,  gpus: 2,  gpuModel: 'NVIDIA A100 80GB', gpuKey: 'gpu_a100_80gb', family: 'a2ultra' },
+  'a2-ultragpu-4g': { vcpu: 48,  ramGb: 680,  gpus: 4,  gpuModel: 'NVIDIA A100 80GB', gpuKey: 'gpu_a100_80gb', family: 'a2ultra' },
+  'a2-ultragpu-8g': { vcpu: 96,  ramGb: 1360, gpus: 8,  gpuModel: 'NVIDIA A100 80GB', gpuKey: 'gpu_a100_80gb', family: 'a2ultra' },
+  'a3-highgpu-1g':  { vcpu: 26,  ramGb: 234,  gpus: 1,  gpuModel: 'NVIDIA H100 80GB', gpuKey: 'gpu_h100', family: 'a3' },
+  'a3-highgpu-2g':  { vcpu: 52,  ramGb: 468,  gpus: 2,  gpuModel: 'NVIDIA H100 80GB', gpuKey: 'gpu_h100', family: 'a3' },
+  'a3-highgpu-4g':  { vcpu: 104, ramGb: 936,  gpus: 4,  gpuModel: 'NVIDIA H100 80GB', gpuKey: 'gpu_h100', family: 'a3' },
+  'a3-highgpu-8g':  { vcpu: 208, ramGb: 1872, gpus: 8,  gpuModel: 'NVIDIA H100 80GB', gpuKey: 'gpu_h100', family: 'a3' },
+  'g2-standard-4':  { vcpu: 4,   ramGb: 16,   gpus: 1,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+  'g2-standard-8':  { vcpu: 8,   ramGb: 32,   gpus: 1,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+  'g2-standard-12': { vcpu: 12,  ramGb: 48,   gpus: 1,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+  'g2-standard-16': { vcpu: 16,  ramGb: 64,   gpus: 1,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+  'g2-standard-24': { vcpu: 24,  ramGb: 96,   gpus: 2,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+  'g2-standard-32': { vcpu: 32,  ramGb: 128,  gpus: 2,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+  'g2-standard-48': { vcpu: 48,  ramGb: 192,  gpus: 4,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+  'g2-standard-96': { vcpu: 96,  ramGb: 384,  gpus: 8,  gpuModel: 'NVIDIA L4', gpuKey: 'gpu_l4', family: 'g2' },
+};
+
+function gcpSkuUnitPrice(sku) {
+  const rate = sku.pricingInfo?.[0]?.pricingExpression?.tieredRates?.find(r => r.startUsageAmount === 0);
+  if (!rate?.unitPrice) return null;
+  const { units = '0', nanos = 0 } = rate.unitPrice;
+  return parseFloat(units) + nanos / 1e9;
+}
+
+async function fetchGcpSkus() {
+  const gcpKey = window.AIFA_GCP_KEY;
+  if (!gcpKey) return null;
+  const skus = [];
+  let pageToken = '';
+  const baseUrl = `https://cloudbilling.googleapis.com/v1/services/${GCP_CE_SERVICE_ID}/skus?key=${gcpKey}&currencyCode=USD&pageSize=5000`;
+  do {
+    const r = await fetch(pageToken ? `${baseUrl}&pageToken=${pageToken}` : baseUrl);
+    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(`GCP API ${r.status}: ${b.error?.message ?? r.statusText}`); }
+    const data = await r.json();
+    skus.push(...(data.skus ?? []));
+    pageToken = data.nextPageToken ?? '';
+  } while (pageToken);
+  return skus;
+}
+
+function buildGcpComponentPrices(skus) {
+  const prices = {};
+  for (const sku of skus) {
+    if (sku.category?.usageType !== 'OnDemand') continue;
+    const desc = sku.description ?? '';
+    if (/dws|reserved|calendar mode/i.test(desc)) continue;
+    for (const { re, key } of GCP_SKU_PATTERNS) {
+      if (re.test(desc)) {
+        const price = gcpSkuUnitPrice(sku);
+        if (price != null && price > 0 && !(key in prices)) prices[key] = price;
+        break;
+      }
+    }
+  }
+  return prices;
+}
+
+function lookupGcpPrice(componentPrices, instanceType) {
+  const spec = GCP_INSTANCE_SPECS[instanceType];
+  if (!spec) return null;
+  const comp = GCP_FAMILY_COMPONENTS[spec.family];
+  if (!comp) return null;
+  const gp = componentPrices[spec.gpuKey], cp = componentPrices[comp.coreKey], rp = componentPrices[comp.ramKey];
+  if (gp == null || cp == null || rp == null) return null;
+  return { hourlyUSD: Math.round((spec.gpus * gp + spec.vcpu * cp + spec.ramGb * rp) * 1000) / 1000 };
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function cleanInstanceType(raw) { return (raw ?? '').split(/[\s(,]/)[0].trim(); }
+
+function fmtUSD(hourlyUSD) {
+  if (hourlyUSD == null) return null;
+  return {
+    hourly:  hourlyUSD.toFixed(3),
+    monthly: (hourlyUSD * 730).toLocaleString('en-US', { maximumFractionDigits: 0 }),
+  };
+}
+
+// ── Results rendering ──────────────────────────────────────────────────────────
+function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {}) {
+  const el   = document.getElementById('state-results');
+  const recs = aiResult.recommendations ?? {};
+  const providers = [
+    { id: 'aws',   label: 'AWS',   rec: recs.aws,   price: awsPrice,   equivPrice: equivPrices.aws   ?? null },
+    { id: 'azure', label: 'Azure', rec: recs.azure, price: azurePrice, equivPrice: equivPrices.azure ?? null },
+    { id: 'gcp',   label: 'GCP',   rec: recs.gcp,   price: gcpPrice,   equivPrice: equivPrices.gcp   ?? null },
+  ];
+
+  let winnerIdx = -1, lowestPrice = Infinity;
+  providers.forEach((p, i) => {
+    if (p.price?.hourlyUSD != null && p.price.hourlyUSD < lowestPrice) {
+      lowestPrice = p.price.hourlyUSD; winnerIdx = i;
+    }
+  });
+
+  const cards = providers.map((p, i) => {
+    const isWinner  = i === winnerIdx;
+    const instance  = esc(cleanInstanceType(p.rec?.instance_type ?? ''));
+    const gpuModel  = esc(p.rec?.gpu_model ?? '—');
+    const conf      = p.rec?.confidence ?? 'medium';
+    const fmt       = fmtUSD(p.price?.hourlyUSD);
+    const equiv     = p.rec?.equivalent_instance;
+    const equivType = equiv ? cleanInstanceType(equiv.instance_type ?? '') : '';
+    const showEquiv = equiv && equivType && equivType !== cleanInstanceType(p.rec?.instance_type ?? '');
+    const equivFmt  = showEquiv && p.equivPrice ? fmtUSD(p.equivPrice.hourlyUSD) : null;
+    const equivNoteHtml = showEquiv ? `
+      <div class="equiv-note">
+        <strong>Hardware equivalent</strong>
+        <span class="equiv-mono">${esc(equivType)}</span>${equivFmt ? ` · $${equivFmt.hourly}/hr` : ''} (${esc(equiv.gpu_model ?? '')}) — ${esc(equiv.note ?? '')}
+      </div>` : '';
+    return `<div class="pcard ${isWinner ? 'winner' : ''}">
+      ${isWinner ? '<div class="winner-tag">Lowest Cost</div>' : ''}
+      <div class="pcard-top"><span class="cloud-badge ${p.id}">${p.label}</span></div>
+      <div class="price-block">
+        <div class="price-main">${fmt ? `$${fmt.hourly}<sub>/hr</sub>` : '<span class="price-na">N/A</span>'}</div>
+        <div class="price-monthly">${fmt ? `≈ $${fmt.monthly}/mo · 730 hrs` : 'Price not available'}</div>
+      </div>
+      <div>
+        <div class="instance-pill">${instance || '—'}</div>
+        <div class="gpu-spec">${gpuModel}</div>
+      </div>
+      <div class="conf-row">
+        <span class="conf-dot ${conf}"></span>
+        <span class="conf-label">${conf.charAt(0).toUpperCase() + conf.slice(1)} confidence</span>
+      </div>
+      ${equivNoteHtml}
+    </div>`;
+  }).join('');
+
+  const rationale = providers.map(p => `
+    <div class="rationale-row">
+      <span class="cloud-badge ${p.id} rationale-badge">${p.label}</span>
+      <span class="rationale-text">${esc(p.rec?.rationale ?? 'No rationale provided.')}</span>
+    </div>`).join('');
+
+  const consHtml = (aiResult.considerations ?? []).map(c => `
+    <div class="consideration">
+      <span class="consideration-bullet"></span>
+      <span class="consideration-text">${esc(c)}</span>
+    </div>`).join('');
+
+  const gpuTierHtml = aiResult.gpu_tier
+    ? `<div class="gpu-tier-row"><span class="gpu-tier-label">GPU Tier</span><span class="gpu-tier-value">${esc(aiResult.gpu_tier)}</span></div>`
+    : '<div style="padding-bottom:20px;border-bottom:1px solid var(--navy-border)"></div>';
+
+  el.innerHTML = `
+    <div class="results-top-bar">
+      <button class="btn-new-analysis" onclick="resetToEmpty()">← New Analysis</button>
+    </div>
+    <div>
+      <div class="results-eyebrow">AI-Powered Analysis</div>
+      <div class="results-summary">${esc(aiResult.workload_summary ?? '')}</div>
+      ${gpuTierHtml}
+    </div>
+    <div class="cards-row">${cards}</div>
+    <div>
+      <div class="section-head">Rationale</div>
+      <div class="rationale-rows">${rationale}</div>
+    </div>
+    ${consHtml ? `<div><div class="section-head">Considerations</div><div class="considerations">${consHtml}</div></div>` : ''}`;
+}
+
+// ── Error display ──────────────────────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('state-results');
+  el.innerHTML = `
+    <div class="results-top-bar">
+      <button class="btn-new-analysis" onclick="resetToEmpty()">← New Analysis</button>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:16px;text-align:center;padding:60px 40px;">
+      <div style="width:52px;height:52px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div style="font-size:15px;font-weight:600;color:var(--text-sec);">Analysis failed</div>
+      <div style="font-size:13px;color:var(--text-muted);max-width:360px;line-height:1.65;">${esc(msg)}</div>
+    </div>`;
+  showState('state-results');
+}
+
+// ── Pipeline ───────────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  _step = -1;
+  const workload = buildWorkloadDescription(collectForm());
+
+  showState('state-loading');
+  advanceTo(0); // Analyzing workload parameters
+
+  // Phase 1: AI engine + AWS bulk JSON + GCP SKUs all start simultaneously.
+  // Azure is chained off the AI call since it needs the recommended instance type.
+  const aiPromise  = callAnthropic(workload);
+  const awsPromise = fetchAwsPricingData();
+  const gcpPromise = fetchGcpSkus();
+
+  // Azure starts as soon as AI resolves — no need to wait for AWS/GCP
+  const azurePromise = aiPromise.then(ai => {
+    advanceTo(2); // Fetching Azure pricing data
+    return lookupAzurePrice(cleanInstanceType(ai.recommendations?.azure?.instance_type ?? ''));
+  });
+
+  // Advance step indicator as data arrives (advanceTo only moves forward)
+  awsPromise.then(() => advanceTo(1)).catch(() => {});
+  gcpPromise.then(skus => { if (skus) advanceTo(3); }).catch(() => {});
+
+  const [aiResult, awsData, gcpSkus, azurePrice] = await Promise.all([
+    aiPromise, awsPromise, gcpPromise, azurePromise,
+  ]);
+
+  advanceTo(4); // Generating recommendation
+
+  const gcpComponentPrices = gcpSkus ? buildGcpComponentPrices(gcpSkus) : {};
+
+  const awsInstance = cleanInstanceType(aiResult.recommendations?.aws?.instance_type ?? '');
+  const gcpInstance = cleanInstanceType(aiResult.recommendations?.gcp?.instance_type ?? '');
+  const awsPrice    = lookupAwsPrice(awsData, awsInstance);
+  const gcpPrice    = lookupGcpPrice(gcpComponentPrices, gcpInstance);
+
+  // Equiv price lookups — synchronous, reuse already-fetched bulk data
+  const awsEquivInstance = cleanInstanceType(aiResult.recommendations?.aws?.equivalent_instance?.instance_type ?? '');
+  const gcpEquivInstance = cleanInstanceType(aiResult.recommendations?.gcp?.equivalent_instance?.instance_type ?? '');
+  const equivPrices = {
+    aws:   awsEquivInstance ? lookupAwsPrice(awsData, awsEquivInstance)                          : null,
+    azure: null, // Azure equiv would need an extra async API call — omit for now
+    gcp:   gcpEquivInstance ? lookupGcpPrice(gcpComponentPrices, gcpEquivInstance)               : null,
+  };
+
+  await new Promise(r => setTimeout(r, 400)); // let step 4 render briefly
+  renderSteps(STEPS.length);                  // mark all done
+  renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices);
+  showState('state-results');
+}
+
+// ── Skip links ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('.skip-link').forEach(el => {
+  el.addEventListener('click', () => {
+    const name = el.dataset.name, type = el.dataset.type;
+    if (name) {
+      document.querySelectorAll(`input[name="${name}"]`).forEach(r => r.checked = false);
+      if (name === 'modelspec') setModelReveal(null);
+    }
+    if (type) document.querySelectorAll(`input[name="${type}"]`).forEach(c => c.checked = false);
+  });
+});
+
+// ── Compliance None logic ──────────────────────────────────────────────────────
+const noneBox = document.getElementById('cb-none');
+document.querySelectorAll('input[name="compliance"]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    if (cb === noneBox && cb.checked)
+      document.querySelectorAll('input[name="compliance"]').forEach(c => { if (c !== noneBox) c.checked = false; });
+    else if (cb !== noneBox && cb.checked)
+      noneBox.checked = false;
+  });
+});
+
+// ── Model spec reveal (three-path) ────────────────────────────────────────────
+const modelNameWrap  = document.getElementById('model-name-wrap');
+const modelNameInput = document.getElementById('model-name-input');
+const modelSizeWrap  = document.getElementById('model-size-wrap');
+const modelSizeInput = document.getElementById('model-size-input');
+
+function setModelReveal(which) {
+  // which: 'name' | 'size' | null
+  modelNameWrap.classList.toggle('visible', which === 'name');
+  modelSizeWrap.classList.toggle('visible', which === 'size');
+  if (which !== 'name') modelNameInput.value = '';
+  if (which !== 'size') modelSizeInput.value = '';
+}
+
+document.querySelectorAll('input[name="modelspec"]').forEach(r => {
+  r.addEventListener('change', () => {
+    if (!r.checked) return;
+    if (r.value === 'model-name') {
+      setModelReveal('name');
+      setTimeout(() => modelNameInput.focus(), 260);
+    } else if (r.value === 'model-size') {
+      setModelReveal('size');
+      setTimeout(() => modelSizeInput.focus(), 260);
+    } else {
+      setModelReveal(null);
+    }
+  });
+});
+
+// ── Button handler ─────────────────────────────────────────────────────────────
+const btn    = document.getElementById('analyze-btn');
+const btnLbl = document.getElementById('btn-label');
+
+btn.addEventListener('click', async () => {
+  if (!window.AIFA_ANTHROPIC_KEY) {
+    alert('API key not configured.\n\nRun this in your terminal:\n  node gen-config.js\n\nThen reload the page.');
+    return;
+  }
+  btn.disabled = true;
+  btn.classList.add('is-loading');
+  btnLbl.textContent = 'Analyzing…';
+  try {
+    await runAnalysis();
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('is-loading');
+    btnLbl.textContent = 'Analyze My Workload';
+  }
+});
+</script>
+</body>
+</html>
