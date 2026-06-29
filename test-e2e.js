@@ -59,8 +59,7 @@ Respond with this exact JSON structure:
 async function runAiEngine(workload) {
   const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
-    max_tokens: 16000,
-    thinking: { type: "adaptive" },
+    max_tokens: 3000,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: buildUserPrompt(workload) }],
   });
@@ -68,7 +67,7 @@ async function runAiEngine(workload) {
   const textBlock = message.content.find((b) => b.type === "text");
   if (!textBlock) throw new Error("AI engine returned no text block");
   const raw = textBlock.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "");
-  return JSON.parse(raw);
+  return { result: JSON.parse(raw), usage: message.usage };
 }
 
 // ─── AWS Pricing ─────────────────────────────────────────────────────────────
@@ -366,9 +365,9 @@ async function main() {
   console.log("\nPhase 1  Running AI engine and fetching pricing data...\n");
   const t1 = Date.now();
 
-  const [aiResult, awsData, gcpSkus] = await Promise.all([
+  const [aiData, awsData, gcpSkus] = await Promise.all([
     runAiEngine(WORKLOAD).then((r) => {
-      console.log(`  AI engine: recommendations received  (${elapsed(Date.now() - t1)})`);
+      console.log(`  AI engine: recommendations received  (${elapsed(Date.now() - t1)})  in: ${r.usage.input_tokens} / out: ${r.usage.output_tokens} tokens`);
       return r;
     }),
     fetchAwsPricingData().then((r) => {
@@ -379,6 +378,7 @@ async function main() {
   ]);
 
   // ── Phase 2: Extract instance types from AI recommendations ──────────────
+  const aiResult = aiData.result;
   const { aws: awsRec, azure: azureRec, gcp: gcpRec } = aiResult.recommendations;
   const awsInstance   = cleanInstanceType(awsRec.instance_type);
   const azureInstance = cleanInstanceType(azureRec.instance_type);
