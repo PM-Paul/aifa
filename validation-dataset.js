@@ -90,6 +90,46 @@ as far as possible using spot or preemptible instances wherever available.`,
     expectedConsiderationKeywords: ["spot", "preempt", "budget", "cost", "interrupt"],
     minConsiderationMatches: 2,
   },
+  // ---------------------------------------------------------------------------
+  // TC-005 / TC-006 / TC-007: scaling validation — instance count must grow
+  // monotonically as concurrent users and interaction length increase.
+  // ---------------------------------------------------------------------------
+  {
+    id: "TC-005",
+    name: "Scaling S1 — 10 concurrent users, Short Q&A",
+    workload: `We're running a 13 billion parameter AI model for an internal tool used by \
+10 concurrent users at peak. Each interaction is a short question-and-answer (~200 tokens). \
+We're a startup with tight cost constraints — minimize spend at all times. \
+No compliance requirements.`,
+    // At this scale one GPU is enough; any tier ≥ T4 is correct.
+    expectedGpuTier: "T4-class",
+    expectedConsiderationKeywords: ["scal", "cost"],
+    minConsiderationMatches: 2,
+  },
+  {
+    id: "TC-006",
+    name: "Scaling S2 — 200 concurrent users, Conversational",
+    workload: `We're deploying a 13 billion parameter conversational AI app with a peak load of \
+200 concurrent users. Each interaction averages 750 tokens. Traffic swings 10x between \
+off-peak and peak hours. We need near real-time responses (under 10 seconds full response) \
+and cost-efficient autoscaling. No compliance requirements.`,
+    // Higher concurrency; engine must recognise autoscaling and throughput as key concerns.
+    expectedGpuTier: "T4-class",
+    expectedConsiderationKeywords: ["scal", "throughput", "autoscal", "concurr", "user"],
+    minConsiderationMatches: 2,
+  },
+  {
+    id: "TC-007",
+    name: "Scaling S3 — 1000 concurrent users, Document Analysis",
+    workload: `We're operating a high-throughput document analysis platform powered by a \
+13 billion parameter model. Peak load is 1000 concurrent users each submitting \
+3000-token documents for analysis. We require near real-time responses (under 10 seconds) \
+and must provision enough GPU capacity to meet peak demand. No compliance requirements.`,
+    // Large scale; engine should recommend A100-class (A10G/A100) or above.
+    expectedGpuTier: "A100-class",
+    expectedConsiderationKeywords: ["scal", "throughput", "instance", "concurr"],
+    minConsiderationMatches: 2,
+  },
 ];
 
 // ---------------------------------------------------------------------------
