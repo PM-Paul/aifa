@@ -89,6 +89,14 @@ Use these exact per-replica values. Never estimate or derive from TFLOPS.
   A100 80 GB BF16 : 1,300 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU; larger KV-cache headroom enables bigger batches]
   H100 80 GB BF16 : 3,000 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU]
 
+AZURE INSTANCE PRICES (eastus, on-demand Linux) — use these exact values for hourly_cost_usd.
+Never estimate Azure prices. Never use NV36ads_A10_v5 for single-replica workloads.
+  Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   ← preferred single-GPU A10G SKU
+  Standard_NC24ads_A100_v4 (1×A100  80 GB): $3.673/hr   ← preferred single-GPU A100 SKU
+  Standard_NC48ads_A100_v4 (2×A100  80 GB): $7.346/hr
+  Standard_ND96isr_H100_v5 (8×H100  80 GB): $98.32/hr
+  Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr    [multi-GPU; use only when 4 replicas needed to fit model or justify cost]
+
 === INFERENCE WORKLOAD RULES ===
 GPU-optimal quantization — apply based on the GPU family you recommend:
   H100, A100 family  → BF16  (native BF16 Tensor Cores; no quality penalty vs FP16;
@@ -121,7 +129,11 @@ Fleet cost — compute and populate these fields for every inference recommendat
      CRITICAL: instances_needed is a COMPUTED NUMBER, never 1 unless the formula genuinely yields 1.
      The instances_needed JSON field MUST equal the value stated in the rationale. They must always match.
      Do NOT copy placeholder values from the schema — replace every numeric field with your calculated result.
-  7. hourly_cost_usd = approximate on-demand Linux price for the instance (us-east-1 / eastus / us-central1)
+  7. hourly_cost_usd = on-demand Linux price for the exact instance type recommended.
+     For Azure: look up from the AZURE INSTANCE PRICES table above — never estimate.
+     For AWS/GCP: use accurate training-data pricing for us-east-1 / us-central1.
+     CRITICAL: hourly_cost_usd in the JSON MUST equal the price stated in the rationale.
+     They must always be identical. A mismatch between JSON and rationale is always wrong.
   8. total_fleet_cost_per_hour = instances_needed × hourly_cost_usd
   9. total_fleet_cost_per_month = total_fleet_cost_per_hour × 730
   10. effective_cost_per_replica = hourly_cost_usd / replicas_per_instance
