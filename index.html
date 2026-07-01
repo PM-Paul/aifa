@@ -946,6 +946,58 @@
         <span class="skip-link" data-name="scale">Skip / I don't know</span>
       </div>
 
+      <!-- Concurrent Users -->
+      <div class="form-section">
+        <div class="section-label">Concurrent Users at Peak</div>
+        <div class="pill-group">
+          <input type="radio" name="concusers" id="cu-small" value="cu-small" />
+          <label for="cu-small" data-tooltip="Under 50 simultaneous users. Typical for internal tools, small teams, or early-stage products.">Small team</label>
+          <input type="radio" name="concusers" id="cu-dept"  value="cu-dept"  />
+          <label for="cu-dept"  data-tooltip="50–500 simultaneous users. Typical for department-wide tools or growing startups.">Department</label>
+          <input type="radio" name="concusers" id="cu-ent"   value="cu-ent"   />
+          <label for="cu-ent"   data-tooltip="500–5,000 simultaneous users. Typical for company-wide deployments or mid-scale SaaS.">Enterprise</label>
+          <input type="radio" name="concusers" id="cu-large" value="cu-large" />
+          <label for="cu-large" data-tooltip="5,000+ simultaneous users. Typical for consumer products, high-traffic APIs, or large enterprises.">Large scale</label>
+          <input type="radio" name="concusers" id="cu-exact" value="cu-exact" />
+          <label for="cu-exact">Exact number</label>
+        </div>
+        <div class="exact-size-wrap" id="cu-exact-wrap">
+          <div class="exact-size-inner">
+            <div class="exact-size-field">
+              <input type="number" id="cu-exact-input" min="1" placeholder="e.g. 200" />
+              <span class="unit-label">concurrent users</span>
+            </div>
+          </div>
+        </div>
+        <span class="skip-link" data-name="concusers">Skip / I don't know</span>
+      </div>
+
+      <!-- Interaction Length -->
+      <div class="form-section">
+        <div class="section-label">Interaction Length</div>
+        <div class="pill-group">
+          <input type="radio" name="intlen" id="il-qa"    value="Short Q&A"            />
+          <label for="il-qa"    data-tooltip="Quick questions with brief answers. ~200 tokens per interaction. Examples: FAQ bots, simple commands, status checks.">Short Q&amp;A</label>
+          <input type="radio" name="intlen" id="il-conv"  value="Conversational"        />
+          <label for="il-conv"  data-tooltip="Multi-turn dialogue with moderate context. ~750 tokens per interaction. Examples: chatbots, customer support, code help.">Conversational</label>
+          <input type="radio" name="intlen" id="il-doc"   value="Document Analysis"     />
+          <label for="il-doc"   data-tooltip="Processing a full document or long context. ~3,000 tokens per interaction. Examples: contract review, report summarization, research Q&amp;A.">Document Analysis</label>
+          <input type="radio" name="intlen" id="il-long"  value="Long-form Generation"  />
+          <label for="il-long"  data-tooltip="Generating or analyzing large content. ~6,000 tokens per interaction. Examples: essay drafting, detailed code generation, comprehensive analysis.">Long-form Generation</label>
+          <input type="radio" name="intlen" id="il-exact" value="il-exact"              />
+          <label for="il-exact">Exact token count</label>
+        </div>
+        <div class="exact-size-wrap" id="il-exact-wrap">
+          <div class="exact-size-inner">
+            <div class="exact-size-field">
+              <input type="number" id="il-exact-input" min="1" placeholder="e.g. 750" />
+              <span class="unit-label">tokens per interaction</span>
+            </div>
+          </div>
+        </div>
+        <span class="skip-link" data-name="intlen">Skip / I don't know</span>
+      </div>
+
       <!-- Latency -->
       <div class="form-section">
         <div class="section-label">Latency Requirement</div>
@@ -1083,6 +1135,20 @@ const USE_CASE_DESCRIPTIONS = {
   },
 };
 
+const CONCURRENT_USER_PRESETS = {
+  'cu-small': { label: 'a small team (under 50 concurrent users)',              value: 25   },
+  'cu-dept':  { label: 'a department (50–500 concurrent users)',                value: 200  },
+  'cu-ent':   { label: 'an enterprise deployment (500–5,000 concurrent users)', value: 1000 },
+  'cu-large': { label: 'large-scale (5,000+ concurrent users)',                 value: 5000 },
+};
+
+const INTERACTION_LENGTH_PRESETS = {
+  'Short Q&A':            { tokens: 200,  desc: 'short Q&A interactions (~200 tokens per interaction)'          },
+  'Conversational':       { tokens: 750,  desc: 'conversational interactions (~750 tokens per interaction)'      },
+  'Document Analysis':    { tokens: 3000, desc: 'document analysis (~3,000 tokens per interaction)'             },
+  'Long-form Generation': { tokens: 6000, desc: 'long-form generation (~6,000 tokens per interaction)'          },
+};
+
 function collectForm() {
   const wl      = document.querySelector('input[name="workload"]:checked')?.value ?? null;
   const msVal   = document.querySelector('input[name="modelspec"]:checked')?.value ?? null;
@@ -1098,11 +1164,30 @@ function collectForm() {
   }
   const scale   = document.querySelector('input[name="scale"]:checked')?.value ?? null;
   const latency = document.querySelector('input[name="latency"]:checked')?.value ?? null;
+
+  const cuVal = document.querySelector('input[name="concusers"]:checked')?.value ?? null;
+  let concurrentUsers = null;
+  if (cuVal === 'cu-exact') {
+    const v = document.getElementById('cu-exact-input').value.trim();
+    if (v) concurrentUsers = { type: 'exact', value: parseInt(v, 10) };
+  } else if (cuVal) {
+    concurrentUsers = { type: 'preset', key: cuVal };
+  }
+
+  const ilVal = document.querySelector('input[name="intlen"]:checked')?.value ?? null;
+  let interactionLength = null;
+  if (ilVal === 'il-exact') {
+    const v = document.getElementById('il-exact-input').value.trim();
+    if (v) interactionLength = { type: 'exact', value: parseInt(v, 10) };
+  } else if (ilVal) {
+    interactionLength = { type: 'preset', value: ilVal };
+  }
+
   const checked = [...document.querySelectorAll('input[name="compliance"]:checked')].map(c => c.value);
-  return { wl, modelspec, scale, latency, compliance: checked.filter(v => v !== 'None'), noCompliance: checked.includes('None') };
+  return { wl, modelspec, scale, latency, concurrentUsers, interactionLength, compliance: checked.filter(v => v !== 'None'), noCompliance: checked.includes('None') };
 }
 
-function buildWorkloadDescription({ wl, modelspec, scale, latency, compliance, noCompliance }) {
+function buildWorkloadDescription({ wl, modelspec, scale, latency, concurrentUsers, interactionLength, compliance, noCompliance }) {
   const parts = [];
   if (wl) parts.push(`This is a ${wl.toLowerCase()} workload.`);
 
@@ -1119,6 +1204,25 @@ function buildWorkloadDescription({ wl, modelspec, scale, latency, compliance, n
 
   if (scale)   parts.push(`Traffic pattern is ${scale.toLowerCase()}.`);
   if (latency) parts.push(`Latency requirement: ${latency.toLowerCase()}.`);
+
+  if (concurrentUsers) {
+    if (concurrentUsers.type === 'exact') {
+      parts.push(`Peak concurrent users: ${concurrentUsers.value.toLocaleString()}.`);
+    } else {
+      const preset = CONCURRENT_USER_PRESETS[concurrentUsers.key];
+      if (preset) parts.push(`Peak load targets ${preset.label}.`);
+    }
+  }
+
+  if (interactionLength) {
+    if (interactionLength.type === 'exact') {
+      parts.push(`Each interaction averages ${interactionLength.value.toLocaleString()} tokens.`);
+    } else {
+      const preset = INTERACTION_LENGTH_PRESETS[interactionLength.value];
+      if (preset) parts.push(`Interaction type: ${preset.desc}.`);
+    }
+  }
+
   if (compliance.length) parts.push(`Compliance requirements: ${compliance.join(', ')}.`);
   else if (noCompliance) parts.push('No compliance requirements.');
   return parts.length ? parts.join(' ') : 'General AI workload — no specific constraints provided.';
@@ -1569,8 +1673,10 @@ document.querySelectorAll('.skip-link').forEach(el => {
     const name = el.dataset.name, type = el.dataset.type;
     if (name) {
       document.querySelectorAll(`input[name="${name}"]`).forEach(r => r.checked = false);
-      if (name === 'modelspec') setModelReveal(null);
-      if (name === 'workload')  setModelTooltips(null);
+      if (name === 'modelspec')  setModelReveal(null);
+      if (name === 'workload')   setModelTooltips(null);
+      if (name === 'concusers')  setCuExactReveal(false);
+      if (name === 'intlen')     setIlExactReveal(false);
     }
     if (type) document.querySelectorAll(`input[name="${type}"]`).forEach(c => c.checked = false);
   });
@@ -1618,6 +1724,34 @@ document.querySelectorAll('input[name="modelspec"]').forEach(r => {
     } else {
       setModelReveal(null);
     }
+  });
+});
+
+// ── Concurrent-users exact reveal ─────────────────────────────────────────────
+function setCuExactReveal(show) {
+  document.getElementById('cu-exact-wrap').classList.toggle('visible', show);
+  if (!show) document.getElementById('cu-exact-input').value = '';
+}
+
+document.querySelectorAll('input[name="concusers"]').forEach(r => {
+  r.addEventListener('change', () => {
+    if (!r.checked) return;
+    setCuExactReveal(r.value === 'cu-exact');
+    if (r.value === 'cu-exact') setTimeout(() => document.getElementById('cu-exact-input').focus(), 260);
+  });
+});
+
+// ── Interaction-length exact reveal ───────────────────────────────────────────
+function setIlExactReveal(show) {
+  document.getElementById('il-exact-wrap').classList.toggle('visible', show);
+  if (!show) document.getElementById('il-exact-input').value = '';
+}
+
+document.querySelectorAll('input[name="intlen"]').forEach(r => {
+  r.addEventListener('change', () => {
+    if (!r.checked) return;
+    setIlExactReveal(r.value === 'il-exact');
+    if (r.value === 'il-exact') setTimeout(() => document.getElementById('il-exact-input').focus(), 260);
   });
 });
 
