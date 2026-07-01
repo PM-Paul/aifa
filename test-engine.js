@@ -89,6 +89,18 @@ Use these exact per-replica values. Never estimate or derive from TFLOPS.
   A100 80 GB BF16 : 1,300 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU; larger KV-cache headroom enables bigger batches]
   H100 80 GB BF16 : 3,000 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU]
 
+AWS INSTANCE PRICES (us-east-1, on-demand Linux) — use these exact values for hourly_cost_usd.
+Never estimate AWS A10G prices. ALWAYS evaluate all SKU sizes and pick the one with lowest fleet cost.
+  g5.xlarge  (1×A10G  24 GB,  4 vCPU,  16 GB): $1.006/hr   ← cheapest per-GPU; use for cost-optimised fleets
+  g5.2xlarge (1×A10G  24 GB,  8 vCPU,  32 GB): $1.212/hr
+  g5.4xlarge (1×A10G  24 GB, 16 vCPU,  64 GB): $1.624/hr
+  g5.12xlarge(4×A10G  96 GB, 48 vCPU, 192 GB): $5.672/hr   [4 replicas per instance when 13B INT8; tps/instance = 3,200]
+  g5.48xlarge(8×A10G 192 GB, 96 vCPU, 384 GB): $16.288/hr  [8 replicas per instance when 13B INT8; tps/instance = 6,400]
+  CRITICAL: g5.xlarge at $1.006 is almost always the cheapest fleet option for 13B inference —
+  23 × $1.006 = $23.14/hr beats 6 × $5.672 = $34.03/hr (g5.12xlarge) and 3 × $16.288 = $48.86/hr (g5.48xlarge).
+  Use g5.12xlarge or g5.48xlarge ONLY when a workload needs >4 or >8 GPU-replicas on a single machine
+  (e.g. model too large for a single GPU, or NVLink bandwidth is required for training).
+
 AZURE INSTANCE PRICES (eastus, on-demand Linux) — use these exact values for hourly_cost_usd.
 Never estimate Azure prices. Never use NV36ads_A10_v5 for single-replica workloads.
   Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   ← preferred single-GPU A10G SKU
