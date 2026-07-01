@@ -81,6 +81,14 @@ GPU EFFECTIVE COMPUTE REFERENCE — use these exact values in all calculations (
   A10 / A10G INT8 : 113  TOPS    [250  TOPS peak × 0.45]
   B200 / GB200 FP8: 2000 TOPS    [~4,455 TOPS peak × 0.45]
 
+VLLM INFERENCE TPS REFERENCE — 13B-class models, vLLM continuous batching.
+Use these exact per-replica values. Never estimate or derive from TFLOPS.
+  A10G       INT8 :   800 TPS/replica  [24 GB VRAM; ~13 GB INT8 weights → 1 replica/GPU]
+  L4         INT8 :   650 TPS/replica  [24 GB VRAM; ~13 GB INT8 weights → 1 replica/GPU]
+  A100 40 GB BF16 : 1,100 TPS/replica  [40 GB VRAM; ~26 GB BF16 weights → 1 replica/GPU]
+  A100 80 GB BF16 : 1,300 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU; larger KV-cache headroom enables bigger batches]
+  H100 80 GB BF16 : 3,000 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU]
+
 === INFERENCE WORKLOAD RULES ===
 GPU-optimal quantization — apply based on the GPU family you recommend:
   H100, A100 family  → BF16  (native BF16 Tensor Cores; no quality penalty vs FP16;
@@ -90,13 +98,33 @@ GPU-optimal quantization — apply based on the GPU family you recommend:
   B200, GB200        → FP8   (Transformer Engine FP8 via vLLM ≥0.5; ~2× vs BF16, ~4× vs FP16;
                                ~3.25GB weights for 13B FP8; supported on p6, ND B200 v6, a4)
 
-Instance selection: prefer single-GPU instances for autoscaling granularity. \
-Only use multi-GPU instances when a single GPU cannot meet TPS requirements.
+Instance selection — ALWAYS follow these steps in order:
+  a. Identify all plausible single-GPU SKUs for this provider (e.g. A10G, L4, A100-40GB, A100-80GB, H100).
+  b. For each candidate, compute instances_needed and total_fleet_cost_per_hour using the TPS REFERENCE table.
+  c. SELECT the candidate with the LOWEST total_fleet_cost_per_hour.
+     A higher-VRAM GPU that needs fewer instances is often cheaper overall than many low-cost GPUs.
+  d. Prefer single-GPU SKUs (e.g. Standard_NC24ads_A100_v4, g5.xlarge, a2-highgpu-1g) over multi-GPU SKUs.
+     Only use a multi-GPU SKU when the model weights cannot fit a single GPU.
 
 Throughput sizing:
   1. peak_tps = concurrent_users × tokens_per_interaction / target_response_seconds
-  2. tps_per_instance = GPU throughput for model size at selected precision (vLLM continuous batching)
-  3. instance_count = ceil(peak_tps / tps_per_instance × 1.20)   [20% headroom]
+  2. For EACH candidate GPU tier: tps_per_replica = look up from VLLM INFERENCE TPS REFERENCE table — never estimate
+  2b. replicas_per_instance = floor(instance_vram_gb / model_vram_gb_at_precision)  [min 1]
+  2c. tps_per_instance = tps_per_replica × replicas_per_instance
+  3. instances_needed = ceil(peak_tps / tps_per_instance × 1.20)   [20% headroom]
+  4. total_fleet_cost_per_hour = instances_needed × hourly_cost_usd  → pick GPU tier with lowest this value
+
+Fleet cost — compute and populate these fields for every inference recommendation:
+  4. replicas_per_instance = same value as step 2b above
+  5. tps_per_replica = same value as step 2 above (from TPS REFERENCE table — never re-derive)
+  6. instances_needed = ceil(peak_tps / (replicas_per_instance × tps_per_replica) × 1.20)
+     CRITICAL: instances_needed is a COMPUTED NUMBER, never 1 unless the formula genuinely yields 1.
+     The instances_needed JSON field MUST equal the value stated in the rationale. They must always match.
+     Do NOT copy placeholder values from the schema — replace every numeric field with your calculated result.
+  7. hourly_cost_usd = approximate on-demand Linux price for the instance (us-east-1 / eastus / us-central1)
+  8. total_fleet_cost_per_hour = instances_needed × hourly_cost_usd
+  9. total_fleet_cost_per_month = total_fleet_cost_per_hour × 730
+  10. effective_cost_per_replica = hourly_cost_usd / replicas_per_instance
 
 === TRAINING WORKLOAD RULES ===
 Precision: BF16 for activations/weights, FP32 for optimizer states. NO quantization — ever.
@@ -138,30 +166,51 @@ const INFERENCE_SCHEMA = `{
   },
   "recommendations": {
     "aws": {
-      "instance_type": "...", "gpu_model": "...", "instance_count": 1,
+      "instance_type": "...", "gpu_model": "...", "instance_count": "<COMPUTED: ceil(peak_tps/tps_per_instance×1.20)>",
       "quantization_applied": {
         "precision": "BF16|INT8|FP8",
-        "effective_weight_gb": 0,
+        "effective_weight_gb": "<COMPUTED: model_params × bytes_per_param>",
         "throughput_vs_fp16": "e.g. 2x (INT8) or 4x (FP8)"
       },
+      "instances_needed": "<COMPUTED: ceil(peak_tps/(replicas_per_instance×tps_per_replica)×1.20)>",
+      "replicas_per_instance": "<COMPUTED: floor(instance_vram_gb/model_vram_gb)>",
+      "tps_per_replica": "<COMPUTED: tps_per_instance/replicas_per_instance>",
+      "hourly_cost_usd": "<COMPUTED: on-demand price for this instance type>",
+      "total_fleet_cost_per_hour": "<COMPUTED: instances_needed × hourly_cost_usd>",
+      "total_fleet_cost_per_month": "<COMPUTED: total_fleet_cost_per_hour × 730>",
+      "effective_cost_per_replica": "<COMPUTED: hourly_cost_usd / replicas_per_instance>",
       "rationale": "...", "confidence": "high|medium|low"
     },
     "azure": {
-      "instance_type": "...", "gpu_model": "...", "instance_count": 1,
+      "instance_type": "...", "gpu_model": "...", "instance_count": "<COMPUTED: ceil(peak_tps/tps_per_instance×1.20)>",
       "quantization_applied": {
         "precision": "BF16|INT8|FP8",
-        "effective_weight_gb": 0,
+        "effective_weight_gb": "<COMPUTED: model_params × bytes_per_param>",
         "throughput_vs_fp16": "e.g. 2x (INT8) or 4x (FP8)"
       },
+      "instances_needed": "<COMPUTED: ceil(peak_tps/(replicas_per_instance×tps_per_replica)×1.20)>",
+      "replicas_per_instance": "<COMPUTED: floor(instance_vram_gb/model_vram_gb)>",
+      "tps_per_replica": "<COMPUTED: tps_per_instance/replicas_per_instance>",
+      "hourly_cost_usd": "<COMPUTED: on-demand price for this instance type>",
+      "total_fleet_cost_per_hour": "<COMPUTED: instances_needed × hourly_cost_usd>",
+      "total_fleet_cost_per_month": "<COMPUTED: total_fleet_cost_per_hour × 730>",
+      "effective_cost_per_replica": "<COMPUTED: hourly_cost_usd / replicas_per_instance>",
       "rationale": "...", "confidence": "high|medium|low"
     },
     "gcp": {
-      "instance_type": "...", "gpu_model": "...", "instance_count": 1,
+      "instance_type": "...", "gpu_model": "...", "instance_count": "<COMPUTED: ceil(peak_tps/tps_per_instance×1.20)>",
       "quantization_applied": {
         "precision": "BF16|INT8|FP8",
-        "effective_weight_gb": 0,
+        "effective_weight_gb": "<COMPUTED: model_params × bytes_per_param>",
         "throughput_vs_fp16": "e.g. 2x (INT8) or 4x (FP8)"
       },
+      "instances_needed": "<COMPUTED: ceil(peak_tps/(replicas_per_instance×tps_per_replica)×1.20)>",
+      "replicas_per_instance": "<COMPUTED: floor(instance_vram_gb/model_vram_gb)>",
+      "tps_per_replica": "<COMPUTED: tps_per_instance/replicas_per_instance>",
+      "hourly_cost_usd": "<COMPUTED: on-demand price for this instance type>",
+      "total_fleet_cost_per_hour": "<COMPUTED: instances_needed × hourly_cost_usd>",
+      "total_fleet_cost_per_month": "<COMPUTED: total_fleet_cost_per_hour × 730>",
+      "effective_cost_per_replica": "<COMPUTED: hourly_cost_usd / replicas_per_instance>",
       "rationale": "...", "confidence": "high|medium|low"
     }
   },
@@ -284,6 +333,28 @@ async function main() {
     console.log(`  Required TPS : ${ta?.peak_tps_required?.toLocaleString() ?? "?"}`);
     console.log(`  TPS/instance : ${ta?.tps_per_instance?.toLocaleString() ?? "?"}`);
     console.log(`  Sizing       : ${ta?.sizing_rationale ?? "?"}`);
+    console.log();
+  }
+
+  // ── Fleet cost table ──────────────────────────────────────────────────────
+  console.log("\n=== FLEET COST TABLE ===\n");
+  const fmtUSD = (n) => (n == null ? "     N/A" : `$${Number(n).toFixed(2).padStart(8)}`);
+  const fHdr = `${col("Scenario", 32)} ${col("Provider", 8)} ${col("Instances", 10)} ${col("$/hr ea", 10)} ${col("Fleet $/hr", 12)} ${"Fleet $/mo"}`;
+  console.log(fHdr);
+  console.log("─".repeat(fHdr.length));
+  for (const { cfg, result } of results) {
+    const label = `${cfg.label}: ${cfg.concurrentUsers}u × ${cfg.interactionType}`;
+    for (const p of providers) {
+      const rec = result.recommendations[p];
+      const n   = rec?.instances_needed;
+      const hr  = rec?.hourly_cost_usd;
+      const fhr = rec?.total_fleet_cost_per_hour;
+      const fmo = rec?.total_fleet_cost_per_month;
+      console.log(
+        `${col(label, 32)} ${col(p.toUpperCase(), 8)} ${col(n ?? "?", 10)} ` +
+        `${fmtUSD(hr)}   ${fmtUSD(fhr)}   ${fmtUSD(fmo)}`
+      );
+    }
     console.log();
   }
 

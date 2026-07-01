@@ -60,6 +60,7 @@
       border-right: 1px solid var(--navy-border);
       display: flex;
       flex-direction: column;
+      overflow-x: hidden;
     }
 
     .panel-results {
@@ -183,14 +184,16 @@
       font-weight: 500;
     }
 
-    /* Use-case pill tooltips — CSS only, data-tooltip attribute */
+    /* Pill tooltips — position: fixed so they escape the overflow:auto scroll container.
+       JS mouseenter sets --tip-x / --tip-y (label's viewport coordinates) on the label. */
     .pill-group label[data-tooltip]:hover { z-index: 10; }
 
     .pill-group label[data-tooltip]::before {
       content: attr(data-tooltip);
-      position: absolute;
-      bottom: calc(100% + 8px);
-      left: 0;
+      position: fixed;
+      top: var(--tip-y, -9999px);
+      left: var(--tip-x, -9999px);
+      transform: translateY(calc(-100% - 8px));
       width: 200px;
       padding: 8px 11px;
       background: #0b1520;
@@ -203,28 +206,24 @@
       box-shadow: 0 6px 22px rgba(0,0,0,0.55);
       pointer-events: none;
       white-space: normal;
-      z-index: 200;
+      z-index: 9999;
       opacity: 0;
-      transform: translateY(5px);
-      transition: opacity 0.16s ease, transform 0.16s ease;
+      transition: opacity 0.16s ease;
     }
 
-    .pill-group label[data-tooltip]:hover::before {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    .pill-group label[data-tooltip]:hover::before { opacity: 1; }
 
     /* Arrow pointing down toward the hovered pill */
     .pill-group label[data-tooltip]::after {
       content: '';
-      position: absolute;
-      bottom: calc(100% + 2px);
-      left: 50%;
-      transform: translateX(-50%);
+      position: fixed;
+      top: var(--tip-y, -9999px);
+      left: calc(var(--tip-x, -9999px) + 14px);
+      transform: translateY(-10px);
       border: 5px solid transparent;
       border-top-color: #0b1520;
       pointer-events: none;
-      z-index: 201;
+      z-index: 10000;
       opacity: 0;
       transition: opacity 0.16s ease;
     }
@@ -607,6 +606,22 @@
       font-size: 11.5px;
       color: var(--text-muted);
       margin-top: 4px;
+    }
+
+    .price-per-unit {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      opacity: 0.75;
+    }
+
+    .fleet-note {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 6px 20px 0;
+      line-height: 1.55;
+      opacity: 0.8;
     }
 
     .instance-pill {
@@ -1248,7 +1263,23 @@ const SYSTEM_PROMPT = [
   '4. Right-size: choose the smallest GPU count in the selected tier where total_GPU_VRAM ≥ total_VRAM_GB. Do not upgrade tiers based on workload type or traffic patterns alone.',
   '5. Ambiguous model names: if the user names a model family without a specific version (e.g. "Llama" not "Llama 4 Scout"), assume the most recent and widely-used version of that family. State the assumed version explicitly in the gpu_tier field (e.g. "Assumed Llama 3.3 70B — A100-80GB class"). Add a consideration telling the user to confirm their specific version, since different versions vary significantly in size and cost.',
   '6. AWS over-provisioning: when the smallest available AWS instance holds 3 or more full replicas of the model (replica_count = floor(instance_total_vram_gb / model_vram_gb) ≥ 3), add a replica_info object to the aws recommendation: { "replica_count": N, "model_vram_gb": X, "instance_vram_gb": Y }. In the aws rationale, explain that the effective per-replica cost drops significantly at scale and that multi-replica deployment on a single over-provisioned instance is the standard production pattern for AWS in this case.',
-  '7. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
+  '7. Fleet sizing — when the workload specifies concurrent users and interaction length or token count:',
+  '   VLLM TPS REFERENCE for 13B-class models (use these exact per-replica values — never estimate):',
+  '     A10G  INT8 :   800 TPS/replica  [24 GB VRAM; ~13 GB INT8 weights → 1 replica/GPU]',
+  '     L4    INT8 :   650 TPS/replica  [24 GB VRAM; ~13 GB INT8 weights → 1 replica/GPU]',
+  '     A100 40 GB BF16 : 1,100 TPS/replica  [40 GB VRAM; ~26 GB BF16 weights → 1 replica/GPU]',
+  '     A100 80 GB BF16 : 1,300 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU]',
+  '     H100 80 GB BF16 : 3,000 TPS/replica  [80 GB VRAM; ~26 GB BF16 weights → 3 replicas/GPU]',
+  '   a. peak_tps = concurrent_users × tokens_per_interaction / 10  [10s target response]',
+  '   b. For EACH candidate GPU tier: tps_per_replica = from TPS REFERENCE above (never estimate)',
+  '   c. replicas_per_instance = floor(instance_vram_gb / model_vram_gb)  [min 1]',
+  '   d. instances_needed = ceil(peak_tps / (replicas_per_instance × tps_per_replica) × 1.20)  [20% headroom]',
+  '   e. total_fleet_cost_per_hour = instances_needed × hourly_cost_usd',
+  '   f. SELECT the GPU tier with the LOWEST total_fleet_cost_per_hour — not the lowest per-instance price.',
+  '      A higher-VRAM GPU requiring fewer instances is often cheaper than many low-cost GPUs.',
+  '   g. Return instances_needed and replicas_per_instance in each provider recommendation.',
+  '   h. Omit fleet fields entirely when no concurrency data is provided.',
+  '8. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
 ].join('\n');
 
 function buildUserPrompt(workload) {
@@ -1267,9 +1298,9 @@ function buildUserPrompt(workload) {
     '  "workload_summary": "one sentence describing the key requirements",',
     '  "gpu_tier": "minimum capability tier and one-sentence justification",',
     '  "recommendations": {',
-    '    "aws":   { "instance_type": "primary instance type", "gpu_model": "primary GPU model", "rationale": "...", "confidence": "high|medium|low", "replica_info": { "replica_count": 12, "model_vram_gb": 50, "instance_vram_gb": 640 }, "equivalent_instance": { "instance_type": "strict hardware-equivalent", "gpu_model": "GPU model", "note": "why primary is better value" } },',
-    '    "azure": { "instance_type": "e.g. Standard_NC24ads_A100_v4", "gpu_model": "e.g. NVIDIA A100 80GB", "rationale": "...", "confidence": "high|medium|low" },',
-    '    "gcp":   { "instance_type": "e.g. a2-highgpu-2g",            "gpu_model": "e.g. NVIDIA A100 40GB", "rationale": "...", "confidence": "high|medium|low" }',
+    '    "aws":   { "instance_type": "primary instance type", "gpu_model": "primary GPU model", "instances_needed": 1, "replicas_per_instance": 1, "rationale": "...", "confidence": "high|medium|low", "replica_info": { "replica_count": 12, "model_vram_gb": 50, "instance_vram_gb": 640 }, "equivalent_instance": { "instance_type": "strict hardware-equivalent", "gpu_model": "GPU model", "note": "why primary is better value" } },',
+    '    "azure": { "instance_type": "e.g. Standard_NC24ads_A100_v4", "gpu_model": "e.g. NVIDIA A100 80GB", "instances_needed": 1, "replicas_per_instance": 1, "rationale": "...", "confidence": "high|medium|low" },',
+    '    "gcp":   { "instance_type": "e.g. a2-highgpu-2g",            "gpu_model": "e.g. NVIDIA A100 40GB", "instances_needed": 1, "replicas_per_instance": 1, "rationale": "...", "confidence": "high|medium|low" }',
     '  },',
     '  "considerations": ["..."]',
     '}',
@@ -1467,7 +1498,7 @@ function fmtUSD(hourlyUSD) {
 }
 
 // ── Results rendering ──────────────────────────────────────────────────────────
-function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {}) {
+function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {}, concurrentUsersData = null) {
   const el   = document.getElementById('state-results');
   const recs = aiResult.recommendations ?? {};
   const providers = [
@@ -1477,9 +1508,12 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
   ];
 
   let winnerIdx = -1, lowestPrice = Infinity;
+  const hasFleetData = providers.some(p => (p.rec?.instances_needed ?? 0) > 1);
   providers.forEach((p, i) => {
-    if (p.price?.hourlyUSD != null && p.price.hourlyUSD < lowestPrice) {
-      lowestPrice = p.price.hourlyUSD; winnerIdx = i;
+    const n = p.rec?.instances_needed ?? null;
+    const comparePrice = n && p.price?.hourlyUSD ? n * p.price.hourlyUSD : p.price?.hourlyUSD;
+    if (comparePrice != null && comparePrice < lowestPrice) {
+      lowestPrice = comparePrice; winnerIdx = i;
     }
   });
 
@@ -1489,6 +1523,13 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
     const gpuModel  = esc(p.rec?.gpu_model ?? '—');
     const conf      = p.rec?.confidence ?? 'medium';
     const fmt       = fmtUSD(p.price?.hourlyUSD);
+    const instancesNeeded    = p.rec?.instances_needed ?? null;
+    const replicasPerInstance = p.rec?.replicas_per_instance ?? 1;
+    const fleetHourly = instancesNeeded && p.price?.hourlyUSD
+      ? Math.round(instancesNeeded * p.price.hourlyUSD * 1000) / 1000 : null;
+    const fleetFmt    = fleetHourly != null ? fmtUSD(fleetHourly) : null;
+    const fleetMonthly = fleetHourly != null
+      ? Math.round(fleetHourly * 730).toLocaleString() : null;
     const equiv     = p.rec?.equivalent_instance;
     const equivType = equiv ? cleanInstanceType(equiv.instance_type ?? '') : '';
     const showEquiv = equiv && equivType && equivType !== cleanInstanceType(p.rec?.instance_type ?? '');
@@ -1506,12 +1547,22 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
         <strong>Multi-replica deployment</strong>
         $${replicaEffFmt.hourly}/hr effective per replica (${ri.replica_count} replicas sharing one instance — ${ri.instance_vram_gb}GB ÷ ~${ri.model_vram_gb}GB per model)
       </div>` : '';
+    const showFleet    = instancesNeeded != null && instancesNeeded > 1 && fleetFmt != null;
+    const priceMainHtml  = showFleet
+      ? `$${fleetFmt.hourly}<sub>/hr fleet</sub>`
+      : fmt ? `$${fmt.hourly}<sub>/hr</sub>` : '<span class="price-na">N/A</span>';
+    const priceMonthHtml = showFleet
+      ? `≈ $${fleetMonthly}/mo · ${instancesNeeded} instance${instancesNeeded !== 1 ? 's' : ''}`
+      : fmt ? `≈ $${fmt.monthly}/mo · 730 hrs` : 'Price not available';
+    const pricePerUnitHtml = showFleet && fmt
+      ? `<div class="price-per-unit">${instancesNeeded} instances × $${fmt.hourly}/hr</div>` : '';
     return `<div class="pcard ${isWinner ? 'winner' : ''}">
-      ${isWinner ? '<div class="winner-tag">Lowest Cost</div>' : ''}
+      ${isWinner ? `<div class="winner-tag">${hasFleetData ? 'Lowest Fleet Cost' : 'Lowest Cost'}</div>` : ''}
       <div class="pcard-top"><span class="cloud-badge ${p.id}">${p.label}</span></div>
       <div class="price-block">
-        <div class="price-main">${fmt ? `$${fmt.hourly}<sub>/hr</sub>` : '<span class="price-na">N/A</span>'}</div>
-        <div class="price-monthly">${fmt ? `≈ $${fmt.monthly}/mo · 730 hrs` : 'Price not available'}</div>
+        <div class="price-main">${priceMainHtml}</div>
+        <div class="price-monthly">${priceMonthHtml}</div>
+        ${pricePerUnitHtml}
       </div>
       <div>
         <div class="instance-pill">${instance || '—'}</div>
@@ -1542,6 +1593,19 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
     ? `<div class="gpu-tier-row"><span class="gpu-tier-label">GPU Tier</span><span class="gpu-tier-value">${esc(aiResult.gpu_tier)}</span></div>`
     : '<div style="padding-bottom:20px;border-bottom:1px solid var(--navy-border)"></div>';
 
+  let fleetNoteHtml = '';
+  if (hasFleetData) {
+    const cu = concurrentUsersData;
+    let cuText = '';
+    if (cu?.type === 'exact') {
+      cuText = `${Number(cu.value).toLocaleString()} concurrent users`;
+    } else if (cu?.key) {
+      const preset = CONCURRENT_USER_PRESETS[cu.key];
+      if (preset) cuText = preset.label;
+    }
+    fleetNoteHtml = `<div class="fleet-note">Costs shown reflect total fleet size needed to serve${cuText ? ` ${esc(cuText)}` : ' peak load'}. Single-instance cost shown for reference.</div>`;
+  }
+
   el.innerHTML = `
     <div class="results-top-bar">
       <button class="btn-new-analysis" onclick="resetToEmpty()">← New Analysis</button>
@@ -1552,6 +1616,7 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
       ${gpuTierHtml}
     </div>
     <div class="cards-row">${cards}</div>
+    ${fleetNoteHtml}
     <div>
       <div class="section-head">Rationale</div>
       <div class="rationale-rows">${rationale}</div>
@@ -1579,7 +1644,8 @@ function showError(msg) {
 // ── Pipeline ───────────────────────────────────────────────────────────────────
 async function runAnalysis() {
   _step = -1;
-  const workload = buildWorkloadDescription(collectForm());
+  const formData = collectForm();
+  const workload  = buildWorkloadDescription(formData);
 
   showState('state-loading');
   advanceTo(0); // Analyzing workload parameters
@@ -1624,7 +1690,7 @@ async function runAnalysis() {
 
   await new Promise(r => setTimeout(r, 400)); // let step 4 render briefly
   renderSteps(STEPS.length);                  // mark all done
-  renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices);
+  renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices, formData.concurrentUsers);
   showState('state-results');
 }
 
@@ -1752,6 +1818,19 @@ document.querySelectorAll('input[name="intlen"]').forEach(r => {
     if (!r.checked) return;
     setIlExactReveal(r.value === 'il-exact');
     if (r.value === 'il-exact') setTimeout(() => document.getElementById('il-exact-input').focus(), 260);
+  });
+});
+
+// ── Pill tooltip positioning (position:fixed needs viewport coords via JS) ─────
+document.querySelectorAll('.pill-group label[data-tooltip]').forEach(lbl => {
+  lbl.addEventListener('mouseenter', () => {
+    const r = lbl.getBoundingClientRect();
+    lbl.style.setProperty('--tip-x', Math.min(r.left, window.innerWidth - 224) + 'px');
+    lbl.style.setProperty('--tip-y', r.top + 'px');
+  });
+  lbl.addEventListener('mouseleave', () => {
+    lbl.style.removeProperty('--tip-x');
+    lbl.style.removeProperty('--tip-y');
   });
 });
 
