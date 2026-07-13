@@ -195,6 +195,20 @@ Precision: BF16 for activations/weights, FP32 for optimizer states. NO quantizat
 Instance selection: prefer large multi-GPU instances (8-GPU nodes) for training efficiency; \
 NVLink/NVSwitch bandwidth and higher MFU justify the larger unit size.
 
+HIGH-SPEED INTERCONNECT RULE (FR-093): For training workloads requiring more than one GPU,
+ALWAYS recommend an instance with NVLink (or NVSwitch) or InfiniBand connecting the GPUs.
+  AWS:   NEVER recommend the g5 family for multi-GPU training — g5 has no NVLink between its
+         A10G GPUs. Use p4d.24xlarge (8×A100 40GB, NVLink + EFA) or p5.48xlarge
+         (8×H100, NVLink + EFA) instead.
+  Azure: NEVER recommend the NV series for training — NV series has no InfiniBand. Use ND
+         series only: Standard_ND96asr_A100_v4 or Standard_ND96isr_H100_v5 (InfiniBand).
+  GCP:   Use A2 or A3 family (NVLink): a2-highgpu-8g or a3-highgpu-8g.
+  In the rationale for every multi-GPU training recommendation, include this disclosure
+  (fill in NVLink or InfiniBand as appropriate for the provider/instance):
+    "This instance includes [NVLink/InfiniBand] high-speed GPU interconnect, required for
+    efficient multi-GPU training. Without high-speed interconnect, inter-GPU communication
+    becomes a bottleneck that significantly reduces training throughput."
+
 Dataset throughput sizing:
   1. total_flops = 6 × model_params × dataset_tokens   [standard transformer FLOPs estimate]
   2. effective_flops_per_gpu = peak_TFLOPS_BF16 × MFU  [assume 45% MFU for well-tuned setup]
