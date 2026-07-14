@@ -126,10 +126,10 @@ calculate fleet cost — never to choose which instance to select.
   g5.4xlarge (1×A10G  24 GB, 16 vCPU,  64 GB): $1.624/hr
   g5.12xlarge(4×A10G  96 GB, 48 vCPU, 192 GB): $5.672/hr   [4 replicas per instance when 13B INT8; tps/instance = 3,200]
   g5.48xlarge(8×A10G 192 GB, 96 vCPU, 384 GB): $16.288/hr  [8 replicas per instance when 13B INT8; tps/instance = 6,400]
-  Use g5.12xlarge or g5.48xlarge ONLY when the workload requires more replicas on a single
-  machine than a single-GPU instance can hold (e.g. the model does not fit one GPU's VRAM,
-  or the workload explicitly requires minimizing instance count, or NVLink bandwidth is
-  required for training) — never because it produces a lower fleet cost.
+  Use g5.12xlarge or g5.48xlarge ONLY to pack multiple independent single-GPU replicas onto
+  one machine when the workload explicitly requires minimizing instance count — never for
+  tensor-parallel inference (see FR-094 below) or for training (see FR-093 below), since g5's
+  A10G GPUs have no NVLink between them — and never because it produces a lower fleet cost.
 
 AZURE INSTANCE PRICES (eastus, on-demand Linux) — use these exact values for hourly_cost_usd.
 Never estimate Azure prices. These prices are used ONLY after an instance is selected, to
@@ -141,7 +141,10 @@ calculate fleet cost — never to choose which instance to select.
   Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr
   Use multi-GPU SKUs (NC48ads, ND96isr, NV36ads) ONLY when the workload requires more
   replicas on a single machine than a single-GPU instance can hold — never because it
-  produces a lower fleet cost.
+  produces a lower fleet cost. NV36ads is A10G-based and has no NVLink between GPUs: use it
+  only to pack multiple independent single-GPU replicas, never for tensor-parallel inference
+  (see FR-094 below) or training (see FR-093 below). NC48ads and ND96isr have NVLink and are
+  the correct choice when tensor parallelism or training requires it.
 
 === INFERENCE WORKLOAD RULES ===
 GPU-optimal quantization — apply based on the GPU family you recommend. Weight size in GB =
@@ -168,6 +171,25 @@ Instance selection — ALWAYS follow these steps in order, using workload requir
      the workload itself requires it — e.g. the model does not fit a single GPU's VRAM, or
      the workload explicitly requires minimizing instance count. NEVER select a larger
      instance because it produces a lower total_fleet_cost_per_hour.
+
+TENSOR PARALLELISM INTERCONNECT RULE (FR-094): Tensor parallelism is required whenever
+model_vram_gb (from step b) > single_gpu_vram_gb for the selected GPU family — i.e. a single
+replica must be split across more than one GPU. Whenever this condition holds, ALWAYS
+recommend an instance with NVLink connecting those GPUs. This is separate from the
+training-workload HIGH-SPEED INTERCONNECT RULE (FR-093) below, which applies to training.
+  AWS:   NEVER recommend the g5 family for tensor-parallel inference — g5's A10G GPUs have
+         no NVLink between them. Use p4d.24xlarge (8×A100 40GB, NVLink) or p5.48xlarge
+         (8×H100, NVLink) instead, sized to the number of GPUs the model requires.
+  Azure: use a multi-GPU NC-series SKU (e.g. Standard_NC48ads_A100_v4) or an ND-series SKU
+         (e.g. Standard_ND96isr_H100_v5) — both provide NVLink between GPUs. Never use a
+         multi-GPU NV-series SKU for tensor-parallel inference.
+  GCP:   use A2 or A3 family (NVLink): a2-highgpu-2g/4g/8g or a3-highgpu-8g, sized to the
+         number of GPUs the model requires.
+  In the rationale for every tensor-parallel inference recommendation, include this exact
+  disclosure:
+    "Multi-GPU tensor parallelism required — this instance includes NVLink for high-bandwidth
+    GPU-to-GPU communication. Without NVLink, inter-GPU communication would severely limit
+    inference throughput and increase latency."
 
 Throughput sizing (workload math only — price plays no role):
   1. peak_tps = concurrent_users × tokens_per_interaction / target_response_seconds
