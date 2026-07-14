@@ -86,26 +86,33 @@ Use these exact per-replica values. Never estimate or derive from TFLOPS. "N/A" 
 class does not fit that GPU's VRAM even at the GPU's optimal quantization tier — never select
 that GPU for that model class.
 
-  7B class (INT8 ~7 GB / BF16 ~14 GB weights):
+  7B class (INT8 ~7 GB / BF16 ~14 GB / FP8 ~7 GB weights):
     A10G       INT8 : 1,200 TPS/replica  [24 GB VRAM → 1 replica/GPU]
-    L4         INT8 : 1,000 TPS/replica  [24 GB VRAM → 1 replica/GPU]
+    L4         INT8 : 1,000 TPS/replica  [24 GB VRAM → 1 replica/GPU; same L4 chip is used in
+                                          AWS G6 — apply this value to G6 recommendations too]
     A100 40 GB BF16 : 2,000 TPS/replica  [40 GB VRAM → 2 replicas/GPU]
     A100 80 GB BF16 : 2,200 TPS/replica  [80 GB VRAM → 5 replicas/GPU]
     H100 80 GB BF16 : 5,000 TPS/replica  [80 GB VRAM → 5 replicas/GPU]
+    RTX PRO 6000 Blackwell FP8 : 2,000 TPS/replica  [96 GB VRAM → 13 replicas/GPU; AWS G7e, GCP G4]
 
-  13B class (INT8 ~13 GB / BF16 ~26 GB weights):
+  13B class (INT8 ~13 GB / BF16 ~26 GB / FP8 ~13 GB weights):
     A10G       INT8 :   800 TPS/replica  [24 GB VRAM → 1 replica/GPU]
-    L4         INT8 :   650 TPS/replica  [24 GB VRAM → 1 replica/GPU]
+    L4         INT8 :   650 TPS/replica  [24 GB VRAM → 1 replica/GPU; same L4 chip is used in
+                                          AWS G6 — apply this value to G6 recommendations too]
     A100 40 GB BF16 : 1,100 TPS/replica  [40 GB VRAM → 1 replica/GPU]
     A100 80 GB BF16 : 1,300 TPS/replica  [80 GB VRAM → 3 replicas/GPU; larger KV-cache headroom enables bigger batches]
     H100 80 GB BF16 : 3,000 TPS/replica  [80 GB VRAM → 3 replicas/GPU]
+    RTX PRO 6000 Blackwell FP8 : 1,400 TPS/replica  [96 GB VRAM → 7 replicas/GPU; AWS G7e, GCP G4]
 
-  30B class (BF16 ~60 GB weights — does not fit A10G/L4 at any supported quantization):
+  30B class (BF16 ~60 GB / FP8 ~30 GB weights — does not fit A10G/L4 at any supported quantization):
     A10G       : N/A
     L4         : N/A
     A100 40 GB BF16 :   450 TPS/replica  [40 GB VRAM per GPU; requires TP=2 (2×40 GB) to hold weights]
     A100 80 GB BF16 :   600 TPS/replica  [80 GB VRAM → 1 replica/GPU]
     H100 80 GB BF16 : 1,500 TPS/replica  [80 GB VRAM → 1 replica/GPU]
+    RTX PRO 6000 Blackwell FP8 :   700 TPS/replica  [96 GB VRAM → 3 replicas/GPU; AWS G7e, GCP G4 —
+                                    use this GPU for 30B inference that doesn't fit A10G/L4 but
+                                    doesn't need the cost/complexity of an A100 instance]
 
   70B class (BF16 ~140 GB weights — does not fit A10G/L4/A100-40GB at any supported quantization):
     A10G       : N/A
@@ -131,6 +138,17 @@ calculate fleet cost — never to choose which instance to select.
   tensor-parallel inference (see FR-094 below) or for training (see FR-093 below), since g5's
   A10G GPUs have no NVLink between them — and never because it produces a lower fleet cost.
 
+AWS NEW GPU FAMILIES — no pinned prices here; these are newer families without a verified
+reference price, so estimate hourly_cost_usd the same way as GCP (accurate training-data
+pricing, medium confidence) rather than pinning a number. Recommend them whenever they best
+fit the workload — being unpinned does not mean avoid them:
+  G6 family  (1×L4 24 GB per GPU — e.g. g6.xlarge/g6.2xlarge/g6.4xlarge; g6.12xlarge = 4×L4;
+             g6.48xlarge = 8×L4): PREFER over G5 for 7B–13B-class inference — better
+             price/performance. Use the L4 row of the TPS reference table for G6 sizing.
+  G7e family (RTX PRO 6000 Blackwell, 96 GB VRAM per GPU; launched Jan 2026): use for
+             30B-class inference that does not fit A10G/L4 (24 GB) but does not need an A100 —
+             see the RTX PRO 6000 Blackwell row of the TPS reference table.
+
 AZURE INSTANCE PRICES (eastus, on-demand Linux) — use these exact values for hourly_cost_usd.
 Never estimate Azure prices. These prices are used ONLY after an instance is selected, to
 calculate fleet cost — never to choose which instance to select.
@@ -146,6 +164,29 @@ calculate fleet cost — never to choose which instance to select.
   (see FR-094 below) or training (see FR-093 below). NC48ads and ND96isr have NVLink and are
   the correct choice when tensor parallelism or training requires it.
 
+AZURE NEW GPU FAMILIES — no pinned prices here; estimate hourly_cost_usd via accurate
+training-data pricing (medium confidence) rather than pinning a number:
+  Standard_NC40ads_H100_v5 (1×H100 NVL, 80 GB): the PREFERRED single-GPU Azure H100 inference
+             SKU. Use this instead of jumping straight to the 8-GPU Standard_ND96isr_H100_v5
+             whenever the workload only needs one H100-class replica (i.e. it does not require
+             tensor parallelism or fleet-packing across many GPUs).
+  Standard_ND96isr_H200_v5 (8×H200, 141 GB each, NVLink): PREFER over Standard_ND96isr_H100_v5
+             for large training workloads — higher per-GPU VRAM and memory bandwidth improve
+             training throughput at the same GPU count.
+
+GCP NEW GPU FAMILIES:
+  G4 family  (RTX PRO 6000, 96 GB VRAM per GPU): Generally Available, but pricing is not yet in
+             the public GCP Cloud Billing API. Use for the same case as AWS G7e — 30B-class
+             inference that does not fit A10G/L4 but does not need an A100. When G4 is the
+             right recommendation, still surface it: set hourly_cost_usd to null and add
+             "Contact GCP for current G4 pricing" as its own consideration entry. Do NOT
+             fabricate a price for G4.
+  A4X family (GB200 NVL72): requires reserved capacity — NOT available on-demand. Do not
+             recommend A4X as a primary or equivalent_instance recommendation. Mention it only
+             in "considerations", and only for frontier-scale workloads (100B+ parameter
+             training or massive-scale inference), noting that reserved capacity must be
+             arranged with GCP sales ahead of time.
+
 === INFERENCE WORKLOAD RULES ===
 GPU-optimal quantization — apply based on the GPU family you recommend. Weight size in GB =
 model_params_billions × bytes_per_param (INT8/FP8 = 1 byte/param, BF16/FP16 = 2 bytes/param):
@@ -153,6 +194,8 @@ model_params_billions × bytes_per_param (INT8/FP8 = 1 byte/param, BF16/FP16 = 2
   A10G, L4, T4       → INT8  (INT8 Tensor Cores; ~2× throughput vs FP16)
   B200, GB200        → FP8   (Transformer Engine FP8 via vLLM ≥0.5; ~2× vs BF16, ~4× vs FP16;
                                supported on p6, ND B200 v6, a4)
+  RTX PRO 6000 Blackwell → FP8  (same Blackwell Transformer Engine as B200/GB200; 96 GB VRAM;
+                               AWS G7e family, GCP G4 family)
 
 CRITICAL RULE — SEPARATION OF SELECTION FROM COST:
 Instance type and size selection must be based entirely on workload requirements.
@@ -223,7 +266,10 @@ ALWAYS recommend an instance with NVLink (or NVSwitch) or InfiniBand connecting 
          A10G GPUs. Use p4d.24xlarge (8×A100 40GB, NVLink + EFA) or p5.48xlarge
          (8×H100, NVLink + EFA) instead.
   Azure: NEVER recommend the NV series for training — NV series has no InfiniBand. Use ND
-         series only: Standard_ND96asr_A100_v4 or Standard_ND96isr_H100_v5 (InfiniBand).
+         series only: Standard_ND96asr_A100_v4, Standard_ND96isr_H100_v5, or
+         Standard_ND96isr_H200_v5 (all InfiniBand). PREFER Standard_ND96isr_H200_v5 over
+         Standard_ND96isr_H100_v5 for large training workloads — higher per-GPU VRAM and
+         memory bandwidth improve training throughput at the same GPU count.
   GCP:   Use A2 or A3 family (NVLink): a2-highgpu-8g or a3-highgpu-8g.
   In the rationale for every multi-GPU training recommendation, include this disclosure
   (fill in NVLink or InfiniBand as appropriate for the provider/instance):
