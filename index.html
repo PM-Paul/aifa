@@ -230,61 +230,6 @@
 
     .pill-group label[data-tooltip]:hover::after { opacity: 1; }
 
-    /* Checkboxes */
-    .checkbox-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 5px;
-    }
-
-    .cb-item {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      cursor: pointer;
-      padding: 3px 0;
-    }
-
-    .cb-item input[type="checkbox"] {
-      appearance: none;
-      -webkit-appearance: none;
-      width: 15px;
-      height: 15px;
-      border-radius: 4px;
-      border: 1px solid var(--navy-border);
-      background: transparent;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: all 0.14s;
-      position: relative;
-    }
-
-    .cb-item input[type="checkbox"]:checked {
-      background: var(--teal);
-      border-color: var(--teal);
-    }
-
-    .cb-item input[type="checkbox"]:checked::after {
-      content: '';
-      position: absolute;
-      left: 4px;
-      top: 1.5px;
-      width: 4px;
-      height: 8px;
-      border: 2px solid #fff;
-      border-top: none;
-      border-left: none;
-      transform: rotate(45deg);
-    }
-
-    .cb-item span {
-      font-size: 12.5px;
-      color: var(--text-sec);
-      user-select: none;
-    }
-
-    .cb-item:hover span { color: var(--text-pri); }
-
     /* Skip link */
     .skip-link {
       font-size: 11px;
@@ -507,6 +452,12 @@
       line-height: 1.55;
     }
 
+    .input-summary {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
     .gpu-tier-row {
       display: flex;
       align-items: center;
@@ -624,6 +575,48 @@
       opacity: 0.8;
     }
 
+    .estimation-disclaimer {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 14px 20px 0;
+      line-height: 1.55;
+      opacity: 0.8;
+    }
+
+    /* Rationale toggle (collapsed by default — grid-template-rows trick, same pattern as .exact-size-wrap) */
+    .rationale-toggle {
+      font-size: 11px;
+      color: var(--teal);
+      cursor: pointer;
+      user-select: none;
+      width: fit-content;
+      margin-top: 10px;
+      transition: color 0.14s;
+    }
+
+    .rationale-toggle:hover { color: var(--text-pri); }
+
+    .rationale-wrap {
+      display: grid;
+      grid-template-rows: 0fr;
+      transition: grid-template-rows 0.25s ease, opacity 0.25s ease;
+      opacity: 0;
+    }
+
+    .rationale-wrap.visible {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+
+    .rationale-inner {
+      overflow: hidden;
+    }
+
+    .rationale-inner .rationale-text {
+      padding-top: 8px;
+    }
+
     .instance-pill {
       font-family: 'JetBrains Mono', 'Courier New', monospace;
       font-size: 11.5px;
@@ -703,28 +696,6 @@
     }
 
     /* Rationale */
-    .rationale-rows {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .rationale-row {
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
-    }
-
-    .rationale-badge {
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 4px;
-      flex-shrink: 0;
-      margin-top: 2px;
-      letter-spacing: 0.04em;
-    }
-
     .rationale-text {
       font-size: 12.5px;
       color: var(--text-sec);
@@ -1027,20 +998,6 @@
         <span class="skip-link" data-name="latency">Skip / I don't know</span>
       </div>
 
-      <!-- Compliance -->
-      <div class="form-section">
-        <div class="section-label">Compliance Requirements</div>
-        <div class="checkbox-grid">
-          <label class="cb-item"><input type="checkbox" name="compliance" value="SOC 2"   /><span>SOC 2</span></label>
-          <label class="cb-item"><input type="checkbox" name="compliance" value="GDPR"    /><span>GDPR</span></label>
-          <label class="cb-item"><input type="checkbox" name="compliance" value="HIPAA"   /><span>HIPAA</span></label>
-          <label class="cb-item"><input type="checkbox" name="compliance" value="FedRAMP" /><span>FedRAMP</span></label>
-          <label class="cb-item"><input type="checkbox" name="compliance" value="PCI DSS" /><span>PCI DSS</span></label>
-          <label class="cb-item"><input type="checkbox" name="compliance" value="None" id="cb-none" /><span>None</span></label>
-        </div>
-        <span class="skip-link" data-type="compliance">Skip / I don't know</span>
-      </div>
-
     </div><!-- /form-body -->
 
     <div class="form-footer">
@@ -1153,7 +1110,7 @@ const USE_CASE_DESCRIPTIONS = {
 const CONCURRENT_USER_PRESETS = {
   'cu-small': { label: 'a small team (under 50 concurrent users)',              value: 25   },
   'cu-dept':  { label: 'a department (50–500 concurrent users)',                value: 200  },
-  'cu-ent':   { label: 'an enterprise deployment (500–5,000 concurrent users)', value: 1000 },
+  'cu-ent':   { label: 'an enterprise deployment (500–5,000 concurrent users)', value: 2500 },
   'cu-large': { label: 'large-scale (5,000+ concurrent users)',                 value: 5000 },
 };
 
@@ -1198,11 +1155,10 @@ function collectForm() {
     interactionLength = { type: 'preset', value: ilVal };
   }
 
-  const checked = [...document.querySelectorAll('input[name="compliance"]:checked')].map(c => c.value);
-  return { wl, modelspec, scale, latency, concurrentUsers, interactionLength, compliance: checked.filter(v => v !== 'None'), noCompliance: checked.includes('None') };
+  return { wl, modelspec, scale, latency, concurrentUsers, interactionLength };
 }
 
-function buildWorkloadDescription({ wl, modelspec, scale, latency, concurrentUsers, interactionLength, compliance, noCompliance }) {
+function buildWorkloadDescription({ wl, modelspec, scale, latency, concurrentUsers, interactionLength }) {
   const parts = [];
   if (wl) parts.push(`This is a ${wl.toLowerCase()} workload.`);
 
@@ -1225,7 +1181,7 @@ function buildWorkloadDescription({ wl, modelspec, scale, latency, concurrentUse
       parts.push(`Peak concurrent users: ${concurrentUsers.value.toLocaleString()}.`);
     } else {
       const preset = CONCURRENT_USER_PRESETS[concurrentUsers.key];
-      if (preset) parts.push(`Peak load targets ${preset.label}.`);
+      if (preset) parts.push(`Peak load targets ${preset.label}. Assume the midpoint of this range for sizing: ${preset.value.toLocaleString()} concurrent users.`);
     }
   }
 
@@ -1238,9 +1194,54 @@ function buildWorkloadDescription({ wl, modelspec, scale, latency, concurrentUse
     }
   }
 
-  if (compliance.length) parts.push(`Compliance requirements: ${compliance.join(', ')}.`);
-  else if (noCompliance) parts.push('No compliance requirements.');
   return parts.length ? parts.join(' ') : 'General AI workload — no specific constraints provided.';
+}
+
+// ── Input summary (compact recap of what the user actually filled in) ──────────
+const MODEL_TIER_LABELS = {
+  'uc-simple':   'Simple tasks',
+  'uc-moderate': 'Moderate tasks',
+  'uc-complex':  'Complex tasks',
+  'uc-frontier': 'Frontier tasks',
+};
+
+function buildInputSummary({ wl, modelspec, scale, latency, concurrentUsers, interactionLength }) {
+  const parts = [];
+  if (wl) parts.push(wl);
+
+  if (modelspec) {
+    if (modelspec.type === 'usecase') {
+      const label = MODEL_TIER_LABELS[modelspec.value];
+      if (label) parts.push(label);
+    } else if (modelspec.type === 'name') {
+      parts.push(modelspec.value);
+    } else if (modelspec.type === 'size') {
+      parts.push(`${modelspec.value}B params`);
+    }
+  }
+
+  if (scale) parts.push(scale);
+
+  if (concurrentUsers) {
+    if (concurrentUsers.type === 'exact') {
+      parts.push(`${Number(concurrentUsers.value).toLocaleString()} concurrent users`);
+    } else {
+      const preset = CONCURRENT_USER_PRESETS[concurrentUsers.key];
+      if (preset) parts.push(`${preset.value.toLocaleString()} concurrent users`);
+    }
+  }
+
+  if (interactionLength) {
+    if (interactionLength.type === 'exact') {
+      parts.push(`${Number(interactionLength.value).toLocaleString()} tokens/interaction`);
+    } else {
+      parts.push(interactionLength.value);
+    }
+  }
+
+  if (latency) parts.push(latency);
+
+  return parts.join(' · ');
 }
 
 // ── HTML escape ────────────────────────────────────────────────────────────────
@@ -1314,8 +1315,8 @@ const SYSTEM_PROMPT = [
   '       A100 80 GB BF16 :   450 TPS/replica  [80 GB VRAM per GPU; requires TP=2 (2×80 GB) to hold weights]',
   '       H100 80 GB BF16 : 1,200 TPS/replica  [80 GB VRAM per GPU; requires TP=2 (2×80 GB) to hold weights]',
   '     Select tps_per_replica from the row matching this workload\'s model parameter count. If the',
-  '     model size falls between two rows (e.g. 20B), use the nearest larger class and disclose the',
-  '     approximation per the ESTIMATION TRANSPARENCY DISCLOSURES rule below.',
+  '     model size falls between two rows (e.g. 20B), use the nearest larger class and note the',
+  '     approximation in that provider\'s rationale.',
   '   AWS INSTANCE PRICES (us-east-1, on-demand Linux) — use exact values; never estimate. These',
   '   prices are used ONLY after an instance is selected, to calculate fleet cost — never to',
   '   choose which instance to select:',
@@ -1341,15 +1342,35 @@ const SYSTEM_PROMPT = [
   '     RTX PRO 6000 Blackwell row of the TPS reference table.',
   '   AZURE INSTANCE PRICES (eastus, on-demand Linux) — used ONLY after an instance is selected,',
   '   to calculate fleet cost — never to choose which instance to select:',
-  '     Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr',
+  '     Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   [NEVER recommend — see FR-089 below]',
   '     Standard_NC24ads_A100_v4 (1×A100  80 GB): $3.673/hr',
   '     Standard_NC48ads_A100_v4 (2×A100  80 GB): $7.346/hr',
   '     Standard_ND96isr_H100_v5 (8×H100  80 GB): $98.32/hr',
-  '     Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr   [multi-GPU; use only when the',
-  '     workload requires more replicas on one machine than a single-GPU instance can hold.',
-  '     NV36ads is A10G-based with no NVLink between GPUs: never use it for tensor-parallel',
-  '     inference or training. NC48ads and ND96isr have NVLink and are correct when tensor',
-  '     parallelism or training requires it.]',
+  '     Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr   [NEVER recommend — see FR-089 below]',
+  '     Use multi-GPU SKUs (NC48ads, ND96isr) ONLY when the workload requires more replicas on',
+  '     one machine than a single-GPU instance can hold — never because it produces a lower',
+  '     fleet cost. NC48ads and ND96isr have NVLink and are correct when tensor parallelism or',
+  '     training requires it.',
+  '   AZURE INFERENCE GPU RESTRICTION (FR-089): NEVER recommend an NV-series SKU',
+  '   (Standard_NV6ads_A10_v5 or Standard_NV36ads_A10_v5) for ANY Azure recommendation —',
+  '   inference, tensor-parallel inference, or training. NV-series is a graphics/virtual-',
+  '   workstation line, not validated for production LLM workloads; the prices above are listed',
+  '   for completeness only. Always use an NC-series or ND-series SKU for Azure inference instead:',
+  '     Standard_NC24ads_A100_v4 (1×A100 80GB, BF16) is Azure\'s floor inference instance. Use',
+  '     this even when AWS/GCP would use an A10G/L4-class GPU for the same workload — Azure has',
+  '     no approved low-cost A10G-tier inference SKU in this catalog.',
+  '     Standard_NC48ads_A100_v4 or Standard_ND96isr_H100_v5 when the workload needs more VRAM',
+  '     or throughput than a single A100 80GB provides (e.g. tensor parallelism, or higher',
+  '     TPS/replica).',
+  '     Because Azure\'s GPU family differs from A10G/L4 in this case, recompute tps_per_replica',
+  '     and replicas_per_instance from the A100 80GB row of the TPS reference table for Azure —',
+  '     do not reuse AWS/GCP\'s A10G/L4 numbers for an Azure NC24ads_A100_v4 recommendation.',
+  '     CATALOG GAP DISCLOSURE: whenever this substitution applies (i.e. AWS/GCP would use an',
+  '     A10G/L4-class GPU but Azure is forced onto NC24ads_A100_v4), append this exact sentence',
+  '     to the Azure rationale: "Note: Azure does not offer a cost-competitive L4 or A10G-class',
+  '     inference instance after excluding NV series. NC24ads_A100_v4 is Azure\'s minimum approved',
+  '     inference configuration and may be over-provisioned for small workloads — AWS G6 or GCP',
+  '     G2 offer equivalent throughput at significantly lower cost for this workload size."',
   '   AZURE NEW GPU FAMILIES — no pinned prices here; estimate hourly_cost_usd via accurate',
   '   training-data pricing (medium confidence) rather than pinning a number:',
   '     Standard_NC40ads_H100_v5 (1×H100 NVL, 80 GB): the PREFERRED single-GPU Azure H100',
@@ -1404,43 +1425,50 @@ const SYSTEM_PROMPT = [
   '   e. tps_per_replica = from TPS REFERENCE above for the selected GPU family (never estimate)',
   '   f. replicas_per_instance = optimal_replicas_per_instance from step b/c above',
   '   g. instances_needed = ceil(peak_tps / (replicas_per_instance × tps_per_replica) × 1.20)  [20% headroom]',
+  '      CRITICAL — NO QUALITATIVE OVERRIDE: this formula\'s result is final. Never round it down,',
+  '      and never substitute a smaller number because a single instance\'s raw (pre-headroom)',
+  '      capacity already exceeds peak_tps. The ×1.20 multiplier IS the headroom — "ample',
+  '      headroom" describes the formula\'s result, it is never a justification for reducing the',
+  '      instance count below what this step computed. If instances_needed computes to 2,',
+  '      recommend 2 instances.',
   '   h. hourly_cost_usd = price for the exact instance type selected above (fetched after selection).',
   '      For Azure: use the AZURE INSTANCE PRICES table above — never estimate or approximate.',
   '   i. total_fleet_cost_per_hour = instances_needed × hourly_cost_usd',
-  '   j. CRITICAL: hourly_cost_usd in the JSON MUST equal the price stated in the rationale. They must always match.',
+  '   j. CRITICAL: hourly_cost_usd in the JSON MUST equal the price stated in the rationale. They',
+  '      must always match. The instances_needed JSON field MUST equal the value stated in the',
+  '      rationale — do not let the rationale explain away or override the formula\'s result (e.g.',
+  '      "one instance is sufficient because of the available headroom" is NEVER valid reasoning).',
   '   k. Return instances_needed and replicas_per_instance in each provider recommendation.',
   '   l. Omit fleet fields entirely when no concurrency data is provided.',
-  '9. ESTIMATION TRANSPARENCY DISCLOSURES (FR-096, FR-098): every estimated value that materially',
-  '   affects the recommendation MUST be disclosed in "considerations" as its own entry, stating',
-  '   what value was used, why it was chosen, and what impact it has on the recommendation. Do not',
-  '   omit any applicable disclosure, summarize it away, or fold multiple disclosures into one vague',
-  '   sentence. Fill in the exact templates below with this workload\'s actual computed values:',
-  '   a. TPS DISCLOSURE (whenever fleet sizing is performed): "Throughput estimated at [X]',
-  '      TPS/replica for a [model class]-class model on [GPU type] (reference value for vLLM',
-  '      continuous batching). Actual throughput depends on your specific model checkpoint,',
-  '      quantization, batch size, and serving configuration. A 50% difference in actual',
-  '      throughput would change instance count by approximately 2x."',
-  '   b. MFU DISCLOSURE (every recommendation): "GPU utilization assumed at 45% of theoretical',
-  '      peak ([X] effective TFLOPS/TOPS). Optimized deployments typically achieve 50-65% MFU,',
-  '      which would reduce instance count by 15-30%."',
-  '   c. VRAM OVERHEAD DISCLOSURE (every recommendation): "VRAM calculation includes 20% overhead',
-  '      beyond model weights for KV cache and activations. Workloads with long context windows',
-  '      or large batch sizes may require additional overhead."',
-  '   d. SERVING FRAMEWORK DISCLOSURE (FR-076 — must remain present): note that production',
-  '      deployments using optimized serving stacks (vLLM, TensorRT-LLM) may achieve a higher MFU',
-  '      than the 45% assumed here, and therefore need fewer instances than this recommendation.',
-  '      This may be combined with the MFU disclosure above, but must not be omitted.',
-  '   e. SKIPPED-INPUT DISCLOSURE (whenever a required input is missing from the workload — e.g.',
-  '      concurrent users, interaction length/token count, model parameter count, or latency',
-  '      target): state explicitly what default value was assumed in its place, and how the',
-  '      recommendation would change under a different input value.',
-  '10. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
+  '9. SKIPPED-INPUT DISCLOSURE: whenever a required input is missing from the workload (e.g.',
+  '   concurrent users, interaction length/token count, model parameter count, or latency target),',
+  '   add an entry to "considerations" stating explicitly what default value was assumed in its',
+  '   place, and how the recommendation would change under a different input value.',
+  '   GENERIC ESTIMATION CAVEATS — DO NOT ADD TO "considerations": general estimation-methodology',
+  '   caveats (GPU utilization/MFU assumptions, VRAM overhead assumptions, serving-framework',
+  '   assumptions, TPS-reference-value caveats, or region/pricing caveats) are already shown once,',
+  '   statically, in the UI — never add an entry restating any of these in "considerations". Only',
+  '   include considerations that are specific to this workload or recommendation (e.g. MoE',
+  '   active-parameter notes, NVLink/InfiniBand interconnect requirements, TTFT/latency risk',
+  '   warnings, catalog-gap disclosures, or the skipped-input disclosure above).',
+  '10. ABSOLUTE CONSISTENCY RULE: instances_needed in the JSON output MUST equal the final',
+  '    instances_needed value derived in the rationale — no exceptions. If your rationale works',
+  '    through multiple candidate numbers before reaching a final answer (e.g. per-GPU-family',
+  '    comparisons, or intermediate steps for different parameter-count assumptions), the JSON',
+  '    field must match ONLY the final number the rationale concludes with — never an intermediate',
+  '    value, and never a different number than what the rationale states. Before finalizing your',
+  '    response, re-read each provider\'s rationale, identify the number it concludes with, and',
+  '    confirm that provider\'s instances_needed JSON field is IDENTICAL to it. A mismatch between',
+  '    the JSON field and the rationale\'s concluding number is never acceptable, regardless of how',
+  '    the discrepancy arose.',
+  '11. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.',
 ].join('\n');
 
-function buildUserPrompt(workload) {
+function buildUserPrompt(workload, correction = '') {
   return [
     'Analyze this AI workload and recommend one GPU instance per cloud provider.',
     '',
+    ...(correction ? [correction, ''] : []),
     workload,
     '',
     'Instructions:',
@@ -1462,7 +1490,7 @@ function buildUserPrompt(workload) {
   ].join('\n');
 }
 
-async function callAnthropic(workload) {
+async function callAnthropic(workload, maxTokens = 16000, correction = '') {
   const key = window.AIFA_ANTHROPIC_KEY;
   if (!key) throw new Error('ANTHROPIC_API_KEY not found — run: node gen-config.js, then reload.');
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1475,9 +1503,9 @@ async function callAnthropic(workload) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 3000,
+      max_tokens: maxTokens,
       system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: buildUserPrompt(workload) }],
+      messages: [{ role: 'user', content: buildUserPrompt(workload, correction) }],
     }),
   });
   if (!response.ok) {
@@ -1488,7 +1516,55 @@ async function callAnthropic(workload) {
   const textBlock = data.content?.find(b => b.type === 'text');
   if (!textBlock) throw new Error('No text block in Anthropic response');
   const raw = textBlock.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch (parseErr) {
+    // Response was cut off mid-JSON because it hit the token ceiling — retry once
+    // with double the budget rather than surfacing a confusing parse error.
+    if (data.stop_reason === 'max_tokens' && maxTokens < 32000) {
+      console.warn(`[AIFA] Response truncated at max_tokens=${maxTokens} — retrying with ${maxTokens * 2}`);
+      return callAnthropic(workload, maxTokens * 2, correction);
+    }
+    throw parseErr;
+  }
+}
+
+// ── Blocked SKU detection & silent retry ────────────────────────────────────────
+// FR-089 (Azure NV-series) and the AWS g5/g6-for-training rule are enforced only via
+// SYSTEM_PROMPT instructions — the model can still violate them. This is a code-side
+// backstop: catch a violation before it reaches pricing/rendering and give the model
+// one corrective retry rather than surfacing a broken recommendation to the user.
+const BLOCKED_SKU_CORRECTION = 'IMPORTANT CORRECTION: Your previous response recommended a blocked instance. Azure NV-series (NV6ads, NV36ads) is never permitted for inference or training — use NC-series only. AWS g5/g6 family is never permitted for training — use p4d, p4de, or p5 only. Return corrected recommendations.';
+
+function detectBlockedSku(aiResult, workloadType) {
+  const reasons = [];
+  const azureInstance = cleanInstanceType(aiResult?.recommendations?.azure?.instance_type ?? '');
+  const awsInstance    = cleanInstanceType(aiResult?.recommendations?.aws?.instance_type ?? '');
+  if (/NV6ads|NV36ads/i.test(azureInstance)) {
+    reasons.push(`Azure returned blocked NV-series instance: "${azureInstance}"`);
+  }
+  if ((workloadType === 'Training' || workloadType === 'Both') && /^g5\.|^g6\./i.test(awsInstance)) {
+    reasons.push(`AWS returned blocked g5/g6 instance for a training workload: "${awsInstance}"`);
+  }
+  return reasons;
+}
+
+async function getAiRecommendation(workload, workloadType) {
+  let aiResult = await callAnthropic(workload);
+  let reasons  = detectBlockedSku(aiResult, workloadType);
+
+  if (reasons.length) {
+    console.warn('[AIFA] Blocked SKU detected in AI recommendation — retrying silently.', reasons);
+    aiResult = await callAnthropic(workload, 16000, BLOCKED_SKU_CORRECTION);
+    reasons  = detectBlockedSku(aiResult, workloadType);
+    if (reasons.length) {
+      console.error('[AIFA] Blocked SKU still present after retry — giving up.', reasons);
+      throw new Error('We had trouble generating a recommendation for this workload. Please try again.');
+    }
+    console.log('[AIFA] Retry resolved the blocked SKU(s).');
+  }
+
+  return aiResult;
 }
 
 // ── AWS Pricing ────────────────────────────────────────────────────────────────
@@ -1653,7 +1729,7 @@ function fmtUSD(hourlyUSD) {
 }
 
 // ── Results rendering ──────────────────────────────────────────────────────────
-function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {}, concurrentUsersData = null) {
+function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {}, formData = null) {
   const el   = document.getElementById('state-results');
   const recs = aiResult.recommendations ?? {};
   const providers = [
@@ -1662,8 +1738,12 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
     { id: 'gcp',   label: 'GCP',   rec: recs.gcp,   price: gcpPrice,   equivPrice: equivPrices.gcp   ?? null },
   ];
 
+  console.log('[AIFA debug] raw recommendations:', JSON.parse(JSON.stringify(recs)));
+  console.log('[AIFA debug] raw prices:', { aws: awsPrice, azure: azurePrice, gcp: gcpPrice });
+
   let winnerIdx = -1, lowestPrice = Infinity;
   const hasFleetData = providers.some(p => (p.rec?.instances_needed ?? 0) > 1);
+  console.log('[AIFA debug] hasFleetData:', hasFleetData, providers.map(p => ({ id: p.id, instances_needed: p.rec?.instances_needed, hourlyUSD: p.price?.hourlyUSD })));
   providers.forEach((p, i) => {
     const n = p.rec?.instances_needed ?? null;
     const comparePrice = n && p.price?.hourlyUSD ? n * p.price.hourlyUSD : p.price?.hourlyUSD;
@@ -1702,7 +1782,8 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
         <strong>Multi-replica deployment</strong>
         $${replicaEffFmt.hourly}/hr effective per replica (${ri.replica_count} replicas sharing one instance — ${ri.instance_vram_gb}GB ÷ ~${ri.model_vram_gb}GB per model)
       </div>` : '';
-    const showFleet    = instancesNeeded != null && instancesNeeded > 1 && fleetFmt != null;
+    const showFleet    = hasFleetData && instancesNeeded != null && fleetFmt != null;
+    console.log(`[AIFA debug] ${p.id}: instances_needed=${instancesNeeded}, replicas_per_instance=${replicasPerInstance}, hourlyUSD=${p.price?.hourlyUSD}, total_fleet_cost_per_hour(JSON)=${p.rec?.total_fleet_cost_per_hour}, fleetHourly(computed)=${fleetHourly}, hasFleetData=${hasFleetData}, showFleet=${showFleet}`);
     const priceMainHtml  = showFleet
       ? `$${fleetFmt.hourly}<sub>/hr fleet</sub>`
       : fmt ? `$${fmt.hourly}<sub>/hr</sub>` : '<span class="price-na">N/A</span>';
@@ -1710,7 +1791,7 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
       ? `≈ $${fleetMonthly}/mo · ${instancesNeeded} instance${instancesNeeded !== 1 ? 's' : ''}`
       : fmt ? `≈ $${fmt.monthly}/mo · 730 hrs` : 'Price not available';
     const pricePerUnitHtml = showFleet && fmt
-      ? `<div class="price-per-unit">${instancesNeeded} instances × $${fmt.hourly}/hr</div>` : '';
+      ? `<div class="price-per-unit">${instancesNeeded} instance${instancesNeeded !== 1 ? 's' : ''} × $${fmt.hourly}/hr</div>` : '';
     return `<div class="pcard ${isWinner ? 'winner' : ''}">
       ${isWinner ? `<div class="winner-tag">${hasFleetData ? 'Lowest Fleet Cost' : 'Lowest Cost'}</div>` : ''}
       <div class="pcard-top"><span class="cloud-badge ${p.id}">${p.label}</span></div>
@@ -1729,14 +1810,14 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
       </div>
       ${replicaNoteHtml}
       ${equivNoteHtml}
+      <div class="rationale-toggle" onclick="toggleRationale(this)">View sizing math ↓</div>
+      <div class="rationale-wrap">
+        <div class="rationale-inner">
+          <div class="rationale-text">${esc(p.rec?.rationale ?? 'No rationale provided.')}</div>
+        </div>
+      </div>
     </div>`;
   }).join('');
-
-  const rationale = providers.map(p => `
-    <div class="rationale-row">
-      <span class="cloud-badge ${p.id} rationale-badge">${p.label}</span>
-      <span class="rationale-text">${esc(p.rec?.rationale ?? 'No rationale provided.')}</span>
-    </div>`).join('');
 
   const consHtml = (aiResult.considerations ?? []).map(c => `
     <div class="consideration">
@@ -1750,16 +1831,19 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
 
   let fleetNoteHtml = '';
   if (hasFleetData) {
-    const cu = concurrentUsersData;
+    const cu = formData?.concurrentUsers;
     let cuText = '';
     if (cu?.type === 'exact') {
       cuText = `${Number(cu.value).toLocaleString()} concurrent users`;
     } else if (cu?.key) {
       const preset = CONCURRENT_USER_PRESETS[cu.key];
-      if (preset) cuText = preset.label;
+      if (preset) cuText = `${preset.label} (assumed ${preset.value.toLocaleString()})`;
     }
     fleetNoteHtml = `<div class="fleet-note">Costs shown reflect total fleet size needed to serve${cuText ? ` ${esc(cuText)}` : ' peak load'}. Single-instance cost shown for reference.</div>`;
   }
+
+  const inputSummary = formData ? buildInputSummary(formData) : '';
+  const inputSummaryHtml = inputSummary ? `<div class="input-summary">${esc(inputSummary)}</div>` : '';
 
   el.innerHTML = `
     <div class="results-top-bar">
@@ -1767,16 +1851,20 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
     </div>
     <div>
       <div class="results-eyebrow">AI-Powered Analysis</div>
+      ${inputSummaryHtml}
       <div class="results-summary">${esc(aiResult.workload_summary ?? '')}</div>
       ${gpuTierHtml}
     </div>
     <div class="cards-row">${cards}</div>
     ${fleetNoteHtml}
-    <div>
-      <div class="section-head">Rationale</div>
-      <div class="rationale-rows">${rationale}</div>
-    </div>
-    ${consHtml ? `<div><div class="section-head">Considerations</div><div class="considerations">${consHtml}</div></div>` : ''}`;
+    ${consHtml ? `<div><div class="section-head">Considerations</div><div class="considerations">${consHtml}</div></div>` : ''}
+    <div class="estimation-disclaimer">These estimates assume an optimized inference server (such as vLLM or TensorRT-LLM) at 45% GPU utilization efficiency with 20% VRAM overhead. Fleet sizes reflect peak concurrent user load with 20% headroom. Pricing reflects US East region rates. Actual costs depend on your specific model, quantization, batch size, and serving configuration — validate with your cloud provider before committing.</div>`;
+}
+
+function toggleRationale(linkEl) {
+  const wrap = linkEl.nextElementSibling;
+  const isVisible = wrap.classList.toggle('visible');
+  linkEl.textContent = isVisible ? 'Hide sizing math ↑' : 'View sizing math ↓';
 }
 
 // ── Error display ──────────────────────────────────────────────────────────────
@@ -1807,7 +1895,7 @@ async function runAnalysis() {
 
   // Phase 1: AI engine + AWS bulk JSON + GCP SKUs all start simultaneously.
   // Azure is chained off the AI call since it needs the recommended instance type.
-  const aiPromise  = callAnthropic(workload);
+  const aiPromise  = getAiRecommendation(workload, formData.wl);
   const awsPromise = fetchAwsPricingData();
   const gcpPromise = fetchGcpSkus();
 
@@ -1845,7 +1933,7 @@ async function runAnalysis() {
 
   await new Promise(r => setTimeout(r, 400)); // let step 4 render briefly
   renderSteps(STEPS.length);                  // mark all done
-  renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices, formData.concurrentUsers);
+  renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices, formData);
   showState('state-results');
 }
 
@@ -1907,17 +1995,6 @@ document.querySelectorAll('input[name="workload"]').forEach(r => {
   r.addEventListener('change', () => setModelTooltips(r.value));
 });
 setModelTooltips(null); // apply default tooltips on load
-
-// ── Compliance None logic ──────────────────────────────────────────────────────
-const noneBox = document.getElementById('cb-none');
-document.querySelectorAll('input[name="compliance"]').forEach(cb => {
-  cb.addEventListener('change', () => {
-    if (cb === noneBox && cb.checked)
-      document.querySelectorAll('input[name="compliance"]').forEach(c => { if (c !== noneBox) c.checked = false; });
-    else if (cb !== noneBox && cb.checked)
-      noneBox.checked = false;
-  });
-});
 
 // ── Model spec reveal (three-path) ────────────────────────────────────────────
 const modelNameWrap  = document.getElementById('model-name-wrap');
