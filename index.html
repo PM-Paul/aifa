@@ -876,8 +876,6 @@
           <label for="wl-train">Training</label>
           <input type="radio" name="workload" id="wl-infer" value="Inference" />
           <label for="wl-infer">Inference</label>
-          <input type="radio" name="workload" id="wl-both" value="Both" />
-          <label for="wl-both">Both</label>
         </div>
         <span class="skip-link" data-name="workload">Skip / I don't know</span>
       </div>
@@ -1543,7 +1541,7 @@ function detectBlockedSku(aiResult, workloadType) {
   if (/NV6ads|NV36ads/i.test(azureInstance)) {
     reasons.push(`Azure returned blocked NV-series instance: "${azureInstance}"`);
   }
-  if ((workloadType === 'Training' || workloadType === 'Both') && /^g5\.|^g6\./i.test(awsInstance)) {
+  if (workloadType === 'Training' && /^g5\.|^g6\./i.test(awsInstance)) {
     reasons.push(`AWS returned blocked g5/g6 instance for a training workload: "${awsInstance}"`);
   }
   return reasons;
@@ -1957,12 +1955,6 @@ const TOOLTIPS = {
     'uc-moderate': 'Training or fine-tuning a mid-size model. Examples: fine-tuning Llama for a specialized domain, training a code generation model, adapting a 13B model on proprietary data.',
     'uc-complex':  'Training a larger model or fine-tuning with a large dataset. Examples: fine-tuning a 30B+ model, training a domain-specific legal or medical model, large-scale instruction tuning.',
     'uc-frontier': 'Pre-training or large-scale fine-tuning of very large models. Examples: training a model from scratch, massive instruction tuning runs, large-scale RLHF training.',
-  },
-  Both: {
-    'uc-simple':   'Best for lightweight inference tasks and small fine-tuning jobs. Examples: basic chatbots, document classification, simple text generation.',
-    'uc-moderate': 'Best for production inference and mid-size fine-tuning. Examples: customer assistants, code helpers, adapting models to your domain.',
-    'uc-complex':  'Best for demanding inference and larger fine-tuning runs. Examples: legal and medical AI, domain-specific fine-tuned models, complex reasoning tasks.',
-    'uc-frontier': 'Best for cutting-edge inference and large-scale training. Examples: advanced AI agents, large model fine-tuning, high-throughput enterprise applications.',
   },
 };
 
