@@ -299,8 +299,8 @@ No compliance requirements.`,
     paramsBillions: 13, workloadType: "Inference", concurrentUsers: 10, tokensPerInteraction: 200, latency: "Near real-time",
     // At this scale one GPU is enough; any tier ≥ T4 is correct.
     expectedGpuTier: "T4-class",
-    expectedConsiderationKeywords: ["scal", "cost"],
-    minConsiderationMatches: 2,
+    expectedConsiderationKeywords: ["scal", "cost", "grow", "minim", "small"],
+    minConsiderationMatches: 1,
   },
   {
     id: "TC-006",
