@@ -140,6 +140,12 @@
       display: flex;
       flex-direction: column;
       gap: 7px;
+      transition: opacity 0.2s ease;
+    }
+
+    .form-section.section-disabled {
+      opacity: 0.4;
+      pointer-events: none;
     }
 
     .section-label {
@@ -883,55 +889,28 @@
       <!-- Model -->
       <div class="form-section">
         <div class="section-label">Model</div>
-        <div class="pill-group">
-          <input type="radio" name="modelspec" id="ms-simple"   value="uc-simple" />
-          <label for="ms-simple"   data-tooltip="Best for answering questions, sorting content, or summarizing documents. Examples: customer support chatbots, email categorization, document tagging, FAQ bots.">Simple tasks</label>
-          <input type="radio" name="modelspec" id="ms-moderate" value="uc-moderate" />
-          <label for="ms-moderate" data-tooltip="Best for writing, analyzing, or explaining content. Examples: drafting emails and reports, code completion, sentiment analysis, product descriptions, data summarization.">Moderate tasks</label>
-          <input type="radio" name="modelspec" id="ms-complex"  value="uc-complex" />
-          <label for="ms-complex"  data-tooltip="Best for deep reasoning, long documents, or specialized domains. Examples: legal contract review, medical record analysis, financial report interpretation, fine-tuned domain models.">Complex tasks</label>
-          <input type="radio" name="modelspec" id="ms-frontier" value="uc-frontier" />
-          <label for="ms-frontier" data-tooltip="Best for the most demanding AI workloads requiring cutting-edge models. Examples: advanced research agents, complex multi-step reasoning, state-of-the-art coding assistants, large-scale generative AI applications.">Frontier tasks</label>
-          <input type="radio" name="modelspec" id="ms-name"     value="model-name" />
-          <label for="ms-name">I know my model name</label>
-          <input type="radio" name="modelspec" id="ms-size"     value="model-size" />
-          <label for="ms-size">I know my model size</label>
+        <div class="exact-size-field">
+          <input type="number" id="model-size-input" min="1" placeholder="e.g. 13" />
+          <span class="unit-label">billion parameters</span>
         </div>
-        <div class="exact-size-wrap" id="model-name-wrap">
-          <div class="exact-size-inner">
-            <div class="exact-size-field">
-              <input type="text" id="model-name-input" placeholder="e.g. Llama 4 Scout, DeepSeek V3" />
-            </div>
-          </div>
-        </div>
-        <div class="exact-size-wrap" id="model-size-wrap">
-          <div class="exact-size-inner">
-            <div class="exact-size-field">
-              <input type="number" id="model-size-input" min="1" placeholder="e.g. 13" />
-              <span class="unit-label">billion parameters</span>
-            </div>
-            <div class="model-size-note">For MoE models, enter active parameters, not total</div>
-          </div>
-        </div>
+        <div class="model-size-note">Not sure how many parameters? Simple chatbots: 1–7B &middot; Content generation and coding: 7–30B &middot; Complex reasoning and analysis: 30–70B &middot; Frontier models: 70B+. For MoE models enter active parameters not total.</div>
         <span class="skip-link" data-name="modelspec">Skip / I don't know</span>
       </div>
 
       <!-- Scale Pattern -->
-      <div class="form-section">
+      <div class="form-section" id="section-scale">
         <div class="section-label">Scale Pattern</div>
         <div class="pill-group">
           <input type="radio" name="scale" id="sc-steady" value="Steady-state" />
           <label for="sc-steady">Steady-state</label>
           <input type="radio" name="scale" id="sc-spiky" value="Variable / Spiky" />
           <label for="sc-spiky">Variable / Spiky</label>
-          <input type="radio" name="scale" id="sc-batch" value="Batch" />
-          <label for="sc-batch">Batch</label>
         </div>
         <span class="skip-link" data-name="scale">Skip / I don't know</span>
       </div>
 
       <!-- Concurrent Users -->
-      <div class="form-section">
+      <div class="form-section" id="section-concusers">
         <div class="section-label">Concurrent Users at Peak</div>
         <div class="pill-group">
           <input type="radio" name="concusers" id="cu-small" value="cu-small" />
@@ -957,7 +936,7 @@
       </div>
 
       <!-- Interaction Length -->
-      <div class="form-section">
+      <div class="form-section" id="section-intlen">
         <div class="section-label">Interaction Length</div>
         <div class="pill-group">
           <input type="radio" name="intlen" id="il-qa"    value="Short Q&A"            />
@@ -983,15 +962,13 @@
       </div>
 
       <!-- Latency -->
-      <div class="form-section">
+      <div class="form-section" id="section-latency">
         <div class="section-label">Latency Requirement</div>
         <div class="pill-group">
           <input type="radio" name="latency" id="lt-rt" value="Real-time" />
-          <label for="lt-rt">Real-time</label>
+          <label for="lt-rt" data-tooltip="Results needed in under 3 seconds — typical for live user-facing applications like voice assistants or real-time translation.">Real-time</label>
           <input type="radio" name="latency" id="lt-nr" value="Near real-time" />
-          <label for="lt-nr">Near real-time</label>
-          <input type="radio" name="latency" id="lt-ba" value="Batch / Async" />
-          <label for="lt-ba">Batch / Async</label>
+          <label for="lt-nr" data-tooltip="Results needed in under 10 seconds — typical for most AI assistants, chatbots, and document processing applications.">Near real-time</label>
         </div>
         <span class="skip-link" data-name="latency">Skip / I don't know</span>
       </div>
@@ -1079,32 +1056,6 @@ function renderSteps(active) {
 
 // ── Form collection ────────────────────────────────────────────────────────────
 
-// Use-case descriptions sent to Claude as workload context.
-// The task-complexity framing gives Claude enough signal to pick the right GPU
-// tier without requiring users to know their model's parameter count.
-const USE_CASE_DESCRIPTIONS = {
-  'uc-simple': {
-    text: 'Simple tasks: classification, summarization, basic Q&A.',
-    examples: 'Use cases include customer support automation, document tagging, and semantic search.',
-    tier: 'Cost-efficient inference; smaller models (≤7B parameters) are typically sufficient.',
-  },
-  'uc-moderate': {
-    text: 'Moderate tasks: text generation, data analysis, coding assistance.',
-    examples: 'Use cases include content creation, data analysis pipelines, and coding copilots.',
-    tier: 'Production inference; mid-range models (7B–30B parameters) typical.',
-  },
-  'uc-complex': {
-    text: 'Complex tasks: multi-step reasoning, long-document processing, fine-tuned domain models.',
-    examples: 'Use cases include legal analysis, medical record summarization, and specialized domain Q&A.',
-    tier: 'High-capability inference; larger models (30B–100B parameters) typical.',
-  },
-  'uc-frontier': {
-    text: 'Frontier tasks: cutting-edge reasoning, agentic pipelines, very large models.',
-    examples: 'Use cases include research, complex multi-agent systems, and state-of-the-art generation.',
-    tier: 'Maximum capability; largest available models (100B+ parameters) or training runs.',
-  },
-};
-
 const CONCURRENT_USER_PRESETS = {
   'cu-small': { label: 'a small team (under 50 concurrent users)',              value: 25   },
   'cu-dept':  { label: 'a department (50–500 concurrent users)',                value: 200  },
@@ -1121,17 +1072,9 @@ const INTERACTION_LENGTH_PRESETS = {
 
 function collectForm() {
   const wl      = document.querySelector('input[name="workload"]:checked')?.value ?? null;
-  const msVal   = document.querySelector('input[name="modelspec"]:checked')?.value ?? null;
   let modelspec = null;
-  if (msVal === 'model-name') {
-    const v = document.getElementById('model-name-input').value.trim();
-    if (v) modelspec = { type: 'name', value: v };
-  } else if (msVal === 'model-size') {
-    const v = document.getElementById('model-size-input').value.trim();
-    if (v) modelspec = { type: 'size', value: v };
-  } else if (msVal) {
-    modelspec = { type: 'usecase', value: msVal };
-  }
+  const msVal   = document.getElementById('model-size-input').value.trim();
+  if (msVal) modelspec = { type: 'size', value: msVal };
   const scale   = document.querySelector('input[name="scale"]:checked')?.value ?? null;
   const latency = document.querySelector('input[name="latency"]:checked')?.value ?? null;
 
@@ -1160,16 +1103,7 @@ function buildWorkloadDescription({ wl, modelspec, scale, latency, concurrentUse
   const parts = [];
   if (wl) parts.push(`This is a ${wl.toLowerCase()} workload.`);
 
-  if (modelspec) {
-    if (modelspec.type === 'usecase') {
-      const uc = USE_CASE_DESCRIPTIONS[modelspec.value];
-      if (uc) parts.push(`${uc.text} ${uc.examples} ${uc.tier}`);
-    } else if (modelspec.type === 'name') {
-      parts.push(`Model: ${modelspec.value}.`);
-    } else if (modelspec.type === 'size') {
-      parts.push(`Model size: ${modelspec.value} billion parameters.`);
-    }
-  }
+  if (modelspec) parts.push(`Model size: ${modelspec.value} billion parameters.`);
 
   if (scale)   parts.push(`Traffic pattern is ${scale.toLowerCase()}.`);
   if (latency) parts.push(`Latency requirement: ${latency.toLowerCase()}.`);
@@ -1196,27 +1130,11 @@ function buildWorkloadDescription({ wl, modelspec, scale, latency, concurrentUse
 }
 
 // ── Input summary (compact recap of what the user actually filled in) ──────────
-const MODEL_TIER_LABELS = {
-  'uc-simple':   'Simple tasks',
-  'uc-moderate': 'Moderate tasks',
-  'uc-complex':  'Complex tasks',
-  'uc-frontier': 'Frontier tasks',
-};
-
 function buildInputSummary({ wl, modelspec, scale, latency, concurrentUsers, interactionLength }) {
   const parts = [];
   if (wl) parts.push(wl);
 
-  if (modelspec) {
-    if (modelspec.type === 'usecase') {
-      const label = MODEL_TIER_LABELS[modelspec.value];
-      if (label) parts.push(label);
-    } else if (modelspec.type === 'name') {
-      parts.push(modelspec.value);
-    } else if (modelspec.type === 'size') {
-      parts.push(`${modelspec.value}B params`);
-    }
-  }
+  if (modelspec) parts.push(`${modelspec.value}B params`);
 
   if (scale) parts.push(scale);
 
@@ -1936,36 +1854,14 @@ async function runAnalysis() {
 }
 
 // ── Skip links ─────────────────────────────────────────────────────────────────
-// ── Dynamic model-tier tooltips ────────────────────────────────────────────────
-const TOOLTIPS = {
-  default: {
-    'uc-simple':   'For lightweight AI workloads — small models, low traffic, or straightforward tasks. Examples: basic chatbots, document classification, simple text generation, low-volume automation.',
-    'uc-moderate': 'For everyday production AI workloads — mid-size models handling regular business tasks. Examples: customer-facing assistants, code helpers, content generation, data analysis pipelines.',
-    'uc-complex':  'For demanding AI workloads requiring larger models or specialized knowledge. Examples: legal and medical AI, domain-specific fine-tuned models, high-volume production inference, complex reasoning tasks.',
-    'uc-frontier': 'For the most demanding AI workloads using cutting-edge large models. Examples: advanced AI agents, state-of-the-art reasoning, large-scale model training, high-throughput enterprise inference.',
-  },
-  Inference: {
-    'uc-simple':   'Best for answering questions, sorting content, or summarizing documents. Examples: customer support chatbots, email categorization, document tagging, FAQ bots.',
-    'uc-moderate': 'Best for writing, analyzing, or explaining content. Examples: drafting emails and reports, code completion, sentiment analysis, product descriptions, data summarization.',
-    'uc-complex':  'Best for deep reasoning, long documents, or specialized domains. Examples: legal contract review, medical record analysis, financial report interpretation, fine-tuned domain models.',
-    'uc-frontier': 'Best for the most demanding AI workloads requiring cutting-edge models. Examples: advanced research agents, complex multi-step reasoning, state-of-the-art coding assistants, large-scale generative AI applications.',
-  },
-  Training: {
-    'uc-simple':   'Fine-tuning a small model on a domain-specific dataset. Examples: adapting a 7B model for customer support, training a text classifier, fine-tuning for a specific writing style.',
-    'uc-moderate': 'Training or fine-tuning a mid-size model. Examples: fine-tuning Llama for a specialized domain, training a code generation model, adapting a 13B model on proprietary data.',
-    'uc-complex':  'Training a larger model or fine-tuning with a large dataset. Examples: fine-tuning a 30B+ model, training a domain-specific legal or medical model, large-scale instruction tuning.',
-    'uc-frontier': 'Pre-training or large-scale fine-tuning of very large models. Examples: training a model from scratch, massive instruction tuning runs, large-scale RLHF training.',
-  },
-};
+// ── Training/Inference section gating ─────────────────────────────────────────
+// Scale Pattern, Concurrent Users, Interaction Length, and Latency only apply to
+// inference — grey them out and disable interaction when Training is selected.
+const TRAINING_DISABLED_SECTION_IDS = ['section-scale', 'section-concusers', 'section-intlen', 'section-latency'];
 
-function setModelTooltips(workload) {
-  const map = TOOLTIPS[workload] ?? TOOLTIPS.default;
-  document.querySelectorAll('input[name="modelspec"]').forEach(radio => {
-    const tip = map[radio.value];
-    if (tip) {
-      const label = document.querySelector(`label[for="${radio.id}"]`);
-      if (label) label.dataset.tooltip = tip;
-    }
+function setTrainingDisabledSections(isTraining) {
+  TRAINING_DISABLED_SECTION_IDS.forEach(id => {
+    document.getElementById(id)?.classList.toggle('section-disabled', isTraining);
   });
 }
 
@@ -1974,48 +1870,19 @@ document.querySelectorAll('.skip-link').forEach(el => {
     const name = el.dataset.name, type = el.dataset.type;
     if (name) {
       document.querySelectorAll(`input[name="${name}"]`).forEach(r => r.checked = false);
-      if (name === 'modelspec')  setModelReveal(null);
-      if (name === 'workload')   setModelTooltips(null);
-      if (name === 'concusers')  setCuExactReveal(false);
-      if (name === 'intlen')     setIlExactReveal(false);
+      if (name === 'modelspec') document.getElementById('model-size-input').value = '';
+      if (name === 'workload')  setTrainingDisabledSections(false);
+      if (name === 'concusers') setCuExactReveal(false);
+      if (name === 'intlen')    setIlExactReveal(false);
     }
     if (type) document.querySelectorAll(`input[name="${type}"]`).forEach(c => c.checked = false);
   });
 });
 
 document.querySelectorAll('input[name="workload"]').forEach(r => {
-  r.addEventListener('change', () => setModelTooltips(r.value));
+  r.addEventListener('change', () => setTrainingDisabledSections(r.value === 'Training'));
 });
-setModelTooltips(null); // apply default tooltips on load
-
-// ── Model spec reveal (three-path) ────────────────────────────────────────────
-const modelNameWrap  = document.getElementById('model-name-wrap');
-const modelNameInput = document.getElementById('model-name-input');
-const modelSizeWrap  = document.getElementById('model-size-wrap');
-const modelSizeInput = document.getElementById('model-size-input');
-
-function setModelReveal(which) {
-  // which: 'name' | 'size' | null
-  modelNameWrap.classList.toggle('visible', which === 'name');
-  modelSizeWrap.classList.toggle('visible', which === 'size');
-  if (which !== 'name') modelNameInput.value = '';
-  if (which !== 'size') modelSizeInput.value = '';
-}
-
-document.querySelectorAll('input[name="modelspec"]').forEach(r => {
-  r.addEventListener('change', () => {
-    if (!r.checked) return;
-    if (r.value === 'model-name') {
-      setModelReveal('name');
-      setTimeout(() => modelNameInput.focus(), 260);
-    } else if (r.value === 'model-size') {
-      setModelReveal('size');
-      setTimeout(() => modelSizeInput.focus(), 260);
-    } else {
-      setModelReveal(null);
-    }
-  });
-});
+setTrainingDisabledSections(false); // nothing selected on load — all sections enabled
 
 // ── Concurrent-users exact reveal ─────────────────────────────────────────────
 function setCuExactReveal(show) {
