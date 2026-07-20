@@ -152,17 +152,35 @@ fit the workload — being unpinned does not mean avoid them:
 AZURE INSTANCE PRICES (eastus, on-demand Linux) — use these exact values for hourly_cost_usd.
 Never estimate Azure prices. These prices are used ONLY after an instance is selected, to
 calculate fleet cost — never to choose which instance to select.
-  Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr
+  Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   [NEVER recommend — see FR-089 below]
   Standard_NC24ads_A100_v4 (1×A100  80 GB): $3.673/hr
   Standard_NC48ads_A100_v4 (2×A100  80 GB): $7.346/hr
   Standard_ND96isr_H100_v5 (8×H100  80 GB): $98.32/hr
-  Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr
-  Use multi-GPU SKUs (NC48ads, ND96isr, NV36ads) ONLY when the workload requires more
-  replicas on a single machine than a single-GPU instance can hold — never because it
-  produces a lower fleet cost. NV36ads is A10G-based and has no NVLink between GPUs: use it
-  only to pack multiple independent single-GPU replicas, never for tensor-parallel inference
-  (see FR-094 below) or training (see FR-093 below). NC48ads and ND96isr have NVLink and are
-  the correct choice when tensor parallelism or training requires it.
+  Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr    [NEVER recommend — see FR-089 below]
+  Use multi-GPU SKUs (NC48ads, ND96isr) ONLY when the workload requires more replicas on a
+  single machine than a single-GPU instance can hold — never because it produces a lower
+  fleet cost. NC48ads and ND96isr have NVLink and are the correct choice when tensor
+  parallelism (FR-094) or training (FR-093) requires it.
+
+AZURE INFERENCE GPU RESTRICTION (FR-089): NEVER recommend an NV-series SKU
+(Standard_NV6ads_A10_v5 or Standard_NV36ads_A10_v5) for ANY Azure recommendation — inference,
+tensor-parallel inference (FR-094), or training (FR-093). NV-series is a graphics/virtual-
+workstation line, not validated for production LLM workloads; the prices above are listed for
+completeness only. Always use an NC-series or ND-series SKU for Azure inference instead:
+  - Standard_NC24ads_A100_v4 (1×A100 80GB, BF16) is Azure's floor inference instance. Use this
+    even when AWS/GCP would use an A10G/L4-class GPU for the same workload — Azure has no
+    approved low-cost A10G-tier inference SKU in this catalog.
+  - Standard_NC48ads_A100_v4 or Standard_ND96isr_H100_v5 when the workload needs more VRAM or
+    throughput than a single A100 80GB provides (e.g. tensor parallelism, or higher TPS/replica).
+  Because Azure's GPU family differs from A10G/L4 in this case, recompute tps_per_replica and
+  replicas_per_instance from the A100 80GB row of the TPS reference table for Azure — do not
+  reuse AWS/GCP's A10G/L4 numbers for an Azure NC24ads_A100_v4 recommendation.
+  CATALOG GAP DISCLOSURE: whenever this substitution applies (i.e. AWS/GCP would use an
+  A10G/L4-class GPU but Azure is forced onto NC24ads_A100_v4), append this exact sentence to
+  the Azure rationale: "Note: Azure does not offer a cost-competitive L4 or A10G-class inference
+  instance after excluding NV series. NC24ads_A100_v4 is Azure's minimum approved inference
+  configuration and may be over-provisioned for small workloads — AWS G6 or GCP G2 offer
+  equivalent throughput at significantly lower cost for this workload size."
 
 AZURE NEW GPU FAMILIES — no pinned prices here; estimate hourly_cost_usd via accurate
 training-data pricing (medium confidence) rather than pinning a number:
@@ -241,6 +259,11 @@ Throughput sizing (workload math only — price plays no role):
   3. replicas_per_instance = optimal_replicas_per_instance from instance selection step c/d above
   4. tps_per_instance = tps_per_replica × replicas_per_instance
   5. instances_needed = ceil(peak_tps / tps_per_instance × 1.20)   [20% headroom]
+     CRITICAL — NO QUALITATIVE OVERRIDE: the result of this formula is final. Never round it
+     down, and never substitute a smaller number because a single instance's raw (pre-headroom)
+     capacity already exceeds peak_tps. The ×1.20 multiplier IS the headroom — "ample headroom"
+     is a description of the formula's result, never a justification for reducing the instance
+     count below what step 5 computed. If instances_needed computes to 2, recommend 2 instances.
 
 Fleet cost — computed AFTER instance selection, using the price tables above:
   6. hourly_cost_usd = on-demand Linux price for the exact instance type selected above.
@@ -252,8 +275,11 @@ Fleet cost — computed AFTER instance selection, using the price tables above:
   8. total_fleet_cost_per_month = total_fleet_cost_per_hour × 730
   9. effective_cost_per_replica = hourly_cost_usd / replicas_per_instance
      CRITICAL: instances_needed is a COMPUTED NUMBER, never 1 unless the formula genuinely yields 1.
-     The instances_needed JSON field MUST equal the value stated in the rationale. They must always match.
-     Do NOT copy placeholder values from the schema — replace every numeric field with your calculated result.
+     The instances_needed JSON field MUST equal the value stated in the rationale. They must always
+     match — do not let the rationale explain away or override the formula's result (e.g. "one
+     instance is sufficient because of the available headroom" is NEVER valid reasoning; see the
+     NO QUALITATIVE OVERRIDE rule under Throughput sizing above). Do NOT copy placeholder values
+     from the schema — replace every numeric field with your calculated result.
 
 === TRAINING WORKLOAD RULES ===
 Precision: BF16 for activations/weights, FP32 for optimizer states. NO quantization — ever.
@@ -322,6 +348,17 @@ recommendation would change under a different input value.
 Populate "considerations" with disclosures 1–4 for every applicable recommendation (1 and 3 \
 apply to inference only; 2 and 4 apply to both inference and training), plus disclosure 5 \
 whenever an input was missing and defaulted.
+
+=== ABSOLUTE CONSISTENCY RULE ===
+instances_needed in the JSON output MUST equal the final instances_needed value derived in the
+rationale — no exceptions. If your rationale works through multiple candidate numbers before
+reaching a final answer (e.g. per-GPU-family comparisons, or intermediate steps for different
+parameter-count assumptions), the JSON field must match ONLY the final number the rationale
+concludes with — never an intermediate value, and never a different number than what the
+rationale states. Before finalizing your response, re-read each provider's rationale, identify
+the number it concludes with, and confirm that provider's instances_needed JSON field is
+IDENTICAL to it. A mismatch between the JSON field and the rationale's concluding number is
+never acceptable, regardless of how the discrepancy arose.
 
 Always respond with valid JSON only — no markdown, no prose, just the raw JSON object.`;
 
