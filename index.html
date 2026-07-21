@@ -836,6 +836,31 @@
 
     .btn-new-analysis:hover { color: var(--text-sec); }
 
+    /* Prominent New Analysis CTA at the bottom of a completed results panel */
+    .btn-new-analysis-bottom {
+      width: 100%;
+      max-width: 320px;
+      margin: 24px auto 0;
+      padding: 11px 18px;
+      background: transparent;
+      color: var(--teal);
+      border: 1px solid var(--teal);
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      letter-spacing: -0.01em;
+      transition: background 0.14s, transform 0.1s;
+    }
+
+    .btn-new-analysis-bottom:hover { background: rgba(13, 148, 136, 0.1); }
+    .btn-new-analysis-bottom:active { transform: scale(0.99); }
+
     .price-na {
       font-size: 18px;
       color: var(--text-muted);
@@ -1035,7 +1060,26 @@ function showState(id) {
   document.getElementById(id).classList.add('active');
 }
 
-function resetToEmpty() { showState('state-empty'); }
+function resetToEmpty() {
+  // Clear all radio selections (workload, model tier, scale, concurrent users, interaction length, latency)
+  document.querySelectorAll('input[type="radio"]').forEach(r => { r.checked = false; });
+  // Clear the parameter count field
+  const modelSizeInput = document.getElementById('model-size-input');
+  if (modelSizeInput) modelSizeInput.value = '';
+  // Clear + hide the exact-value reveals (also clears their inputs)
+  setCuExactReveal(false);
+  setIlExactReveal(false);
+  // Nothing selected → training/inference gating resets to all-enabled
+  setTrainingDisabledSections(false);
+
+  showState('state-empty');
+
+  // Scroll back to top — both the page (mobile/stacked layout) and the form's own
+  // internal scroll container (desktop layout, where .form-body scrolls independently)
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  const formBody = document.querySelector('.form-body');
+  if (formBody) formBody.scrollTop = 0;
+}
 
 // ── Step rendering ─────────────────────────────────────────────────────────────
 let _step = -1;
@@ -1274,8 +1318,8 @@ function computeSizing(formData) {
     }
   }
 
-  // Azure has no approved inference SKU below A100_80 (FR-089 — NV-series/A10G-class is
-  // blocked for inference). When the general tier lands below that, Azure needs its own
+  // Azure has no approved inference SKU below A100_80 (NV-series/A10G-class is blocked
+  // for inference). When the general tier lands below that, Azure needs its own
   // precomputed numbers at A100_80 so the AI never has to consult a TPS table to substitute.
   let azureSubstitute = null;
   if (workload === 'Inference' && selectedGpu.vram < 80) {
@@ -1353,7 +1397,7 @@ function formatSizingBlock(sizing) {
 
   if (sizing.azure_substitute) {
     const az = sizing.azure_substitute;
-    lines.push(`- Azure substitute (FR-089 — no approved ${sizing.gpu_tier}-class inference SKU on Azure): use ${az.gpu_tier} instead (${az.replicas_per_instance} replicas/instance, ${az.tps_per_replica ?? 'N/A'} TPS/replica, ${az.instances_needed ?? 'N/A'} instances needed) for the Azure recommendation only.`);
+    lines.push(`- Azure substitute (no approved ${sizing.gpu_tier}-class inference SKU on Azure): use ${az.gpu_tier} instead (${az.replicas_per_instance} replicas/instance, ${az.tps_per_replica ?? 'N/A'} TPS/replica, ${az.instances_needed ?? 'N/A'} instances needed) for the Azure recommendation only.`);
   }
 
   return lines.join('\n');
@@ -1385,7 +1429,7 @@ const SYSTEM_PROMPT = [
   '2. EQUIVALENT (optional): If your primary for a provider uses meaningfully different GPU hardware than the other providers\' primaries (e.g. A10G vs A100-80GB), add an equivalent_instance field showing the strict hardware-equivalent option and a one-sentence explanation of why the primary is the better value.',
   '3. Write the pre-computed VRAM figure and selected GPU tier into the gpu_tier field (e.g. "15.6GB required — L4/A10G tier (24GB)"). When no pre-computed block is available, state your own VRAM estimate and reasoning there instead.',
   '4. AWS over-provisioning: when the pre-computed (or your own) replicas_per_instance is 3 or more, add a replica_info object to the aws recommendation: { "replica_count": N, "model_vram_gb": X, "instance_vram_gb": Y }, using the pre-computed VRAM figures. In the aws rationale, explain that the effective per-replica cost drops significantly at scale and that multi-replica deployment on a single over-provisioned instance is the standard production pattern for AWS in this case.',
-  '5. HIGH-SPEED INTERCONNECT RULE (FR-093): For training workloads requiring more than one GPU,',
+  '5. HIGH-SPEED INTERCONNECT RULE: For training workloads requiring more than one GPU,',
   '   ALWAYS recommend an instance with NVLink (or NVSwitch) or InfiniBand connecting the GPUs.',
   '   AWS: NEVER recommend the g5 family for multi-GPU training — g5 has no NVLink between its',
   '   A10G GPUs. Use p4d.24xlarge (8×A100 40GB, NVLink + EFA) or p5.48xlarge (8×H100, NVLink + EFA).',
@@ -1401,7 +1445,7 @@ const SYSTEM_PROMPT = [
   '   Without high-speed interconnect, inter-GPU communication becomes a bottleneck that',
   '   significantly reduces training throughput."',
   '6. PROVIDER INSTANCE SELECTION & PRICING:',
-  '   TENSOR PARALLELISM INTERCONNECT RULE (FR-094): tensor parallelism is required whenever the',
+  '   TENSOR PARALLELISM INTERCONNECT RULE: tensor parallelism is required whenever the',
   '   PRE-COMPUTED SIZING block reports sizing as not available because the model exceeds every',
   '   single-GPU tier (or, absent a pre-computed block, whenever your own VRAM estimate exceeds a',
   '   single GPU\'s capacity in the tier you select). Whenever this holds, ALWAYS recommend an',
@@ -1427,6 +1471,9 @@ const SYSTEM_PROMPT = [
   '     g5.4xlarge  (1×A10G  24 GB):  $1.624/hr',
   '     g5.12xlarge (4×A10G  96 GB):  $5.672/hr  [4 replicas/instance for 13B INT8]',
   '     g5.48xlarge (8×A10G 192 GB): $16.288/hr  [8 replicas/instance for 13B INT8]',
+  '     p4d.24xlarge  (8×A100 40GB, NVLink + EFA): $21.958/hr',
+  '     p4de.24xlarge (8×A100 80GB, NVLink + EFA): $27.447/hr',
+  '     p5.48xlarge   (8×H100 80GB SXM5, NVLink + EFA): $55.040/hr',
   '     Use g5.12xlarge/g5.48xlarge ONLY to pack multiple independent single-GPU replicas onto',
   '     one machine when the pre-computed replicas_per_instance requires it, or when the workload',
   '     explicitly requires minimizing instance count — never for tensor-parallel inference (see',
@@ -1442,16 +1489,16 @@ const SYSTEM_PROMPT = [
   '     30B-class inference that does not fit A10G/L4 (24 GB) but does not need an A100.',
   '   AZURE INSTANCE PRICES (eastus, on-demand Linux) — used ONLY after an instance is selected,',
   '   to calculate fleet cost — never to choose which instance to select:',
-  '     Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   [NEVER recommend — see FR-089 below]',
+  '     Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   [NEVER recommend — see AZURE INFERENCE GPU RESTRICTION below]',
   '     Standard_NC24ads_A100_v4 (1×A100  80 GB): $3.673/hr',
   '     Standard_NC48ads_A100_v4 (2×A100  80 GB): $7.346/hr',
   '     Standard_ND96isr_H100_v5 (8×H100  80 GB): $98.32/hr',
-  '     Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr   [NEVER recommend — see FR-089 below]',
+  '     Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr   [NEVER recommend — see AZURE INFERENCE GPU RESTRICTION below]',
   '     Use multi-GPU SKUs (NC48ads, ND96isr) ONLY when the pre-computed (or your own) replicas',
   '     require more capacity on one machine than a single-GPU instance can hold — never because',
   '     it produces a lower fleet cost. NC48ads and ND96isr have NVLink and are correct when',
   '     tensor parallelism or training requires it.',
-  '   AZURE INFERENCE GPU RESTRICTION (FR-089): NEVER recommend an NV-series SKU',
+  '   AZURE INFERENCE GPU RESTRICTION: NEVER recommend an NV-series SKU',
   '   (Standard_NV6ads_A10_v5 or Standard_NV36ads_A10_v5) for ANY Azure recommendation —',
   '   inference, tensor-parallel inference, or training. NV-series is a graphics/virtual-',
   '   workstation line, not validated for production LLM workloads; the prices above are listed',
@@ -1610,7 +1657,7 @@ async function callAnthropic(workload, sizing, maxTokens = 16000, correction = '
 }
 
 // ── Blocked SKU detection & silent retry ────────────────────────────────────────
-// FR-089 (Azure NV-series) and the AWS g5/g6-for-training rule are enforced only via
+// The Azure NV-series restriction and the AWS g5/g6-for-training rule are enforced only via
 // SYSTEM_PROMPT instructions — the model can still violate them. This is a code-side
 // backstop: catch a violation before it reaches pricing/rendering and give the model
 // one corrective retry rather than surfacing a broken recommendation to the user.
@@ -1925,6 +1972,10 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
   const inputSummary = formData ? buildInputSummary(formData) : '';
   const inputSummaryHtml = inputSummary ? `<div class="input-summary">${esc(inputSummary)}</div>` : '';
 
+  const estimationDisclaimer = formData?.wl === 'Training'
+    ? 'These estimates reflect on-demand pricing for multi-GPU training instances with NVLink interconnect. Actual training costs depend on your specific framework, optimizer configuration, and dataset size — validate with your cloud provider before committing.'
+    : 'These estimates assume an optimized inference server (such as vLLM or TensorRT-LLM) at 45% GPU utilization efficiency with 20% VRAM overhead. Fleet sizes reflect peak concurrent user load with 20% headroom. Pricing reflects US East region rates. Actual costs depend on your specific model, quantization, batch size, and serving configuration — validate with your cloud provider before committing.';
+
   el.innerHTML = `
     <div class="results-top-bar">
       <button class="btn-new-analysis" onclick="resetToEmpty()">← New Analysis</button>
@@ -1938,7 +1989,8 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
     <div class="cards-row">${cards}</div>
     ${fleetNoteHtml}
     ${consHtml ? `<div><div class="section-head">Considerations</div><div class="considerations">${consHtml}</div></div>` : ''}
-    <div class="estimation-disclaimer">These estimates assume an optimized inference server (such as vLLM or TensorRT-LLM) at 45% GPU utilization efficiency with 20% VRAM overhead. Fleet sizes reflect peak concurrent user load with 20% headroom. Pricing reflects US East region rates. Actual costs depend on your specific model, quantization, batch size, and serving configuration — validate with your cloud provider before committing.</div>`;
+    <div class="estimation-disclaimer">${estimationDisclaimer}</div>
+    <button class="btn-new-analysis-bottom" onclick="resetToEmpty()">← New Analysis</button>`;
 }
 
 function toggleRationale(linkEl) {
