@@ -214,16 +214,36 @@ async function getAiRecommendation(workload, sizingBlock, workloadType) {
 }
 
 // ── AWS Pricing ────────────────────────────────────────────────────────────────
+// Pinned instead of fetched: the AWS bulk pricing file (us-east-1 EC2 offers) is
+// 50MB+ of JSON covering every instance/OS/tenancy combination, and downloading +
+// parsing it in this serverless function's memory budget was causing OOM crashes
+// in production. selectInstance() in index.html only ever picks AWS instances from
+// this exact set (g6.*/p4d/p4de/p5 pre-computed, g5.* as the AI's stated no-precompute
+// fallback), so pinning covers every reachable case. Prices are on-demand Linux,
+// us-east-1, verified live against the AWS Price List Bulk API — re-verify periodically.
+const AWS_PINNED_PRICES = {
+  'g5.xlarge':    { hourlyUSD: 1.006,  vcpu: '4',   memory: '16 GiB',   gpu: '1', gpuMemory: '24 GB' },
+  'g5.2xlarge':   { hourlyUSD: 1.212,  vcpu: '8',   memory: '32 GiB',   gpu: '1', gpuMemory: '24 GB' },
+  'g5.4xlarge':   { hourlyUSD: 1.624,  vcpu: '16',  memory: '64 GiB',   gpu: '1', gpuMemory: '24 GB' },
+  'g5.12xlarge':  { hourlyUSD: 5.672,  vcpu: '48',  memory: '192 GiB',  gpu: '4', gpuMemory: '96 GB' },
+  'g5.48xlarge':  { hourlyUSD: 16.288, vcpu: '192', memory: '768 GiB', gpu: '8', gpuMemory: '192 GB' },
+  'g6.xlarge':    { hourlyUSD: 0.8048, vcpu: '4',   memory: '16 GiB',  gpu: '1', gpuMemory: '24 GB' },
+  'g6.12xlarge':  { hourlyUSD: 4.6016, vcpu: '48',  memory: '192 GiB', gpu: '4', gpuMemory: '96 GB' },
+  'g6.48xlarge':  { hourlyUSD: 13.3504, vcpu: '192', memory: '768 GiB', gpu: '8', gpuMemory: '192 GB' },
+  'p4d.24xlarge': { hourlyUSD: 21.957642, vcpu: '96', memory: '1152 GiB', gpu: '8', gpuMemory: '320 GB HBM2' },
+  'p4de.24xlarge':{ hourlyUSD: 27.44705,  vcpu: '96', memory: '1152 GiB', gpu: '8', gpuMemory: '640 GB HBM2e' },
+  'p5.48xlarge':  { hourlyUSD: 55.04,     vcpu: '192', memory: '2048 GiB', gpu: '8', gpuMemory: '640 GB HBM3' },
+};
+
 const AWS_PRICING_URL =
   'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json';
 
-async function fetchAwsPricingData() {
+// Fallback for an instance type outside the pinned set (should be rare — the AI is
+// instructed to only ever select from that set or explicitly state it's overriding).
+async function fetchAwsPriceFromBulkApi(instanceType) {
   const r = await fetch(AWS_PRICING_URL);
   if (!r.ok) throw new Error(`AWS pricing HTTP ${r.status}`);
-  return r.json();
-}
-
-function lookupAwsPrice(data, instanceType) {
+  const data = await r.json();
   for (const [sku, product] of Object.entries(data.products ?? {})) {
     const a = product.attributes ?? {};
     if (
@@ -246,6 +266,13 @@ function lookupAwsPrice(data, instanceType) {
     }
   }
   return null;
+}
+
+async function lookupAwsPrice(instanceType) {
+  if (!instanceType) return null;
+  const pinned = AWS_PINNED_PRICES[instanceType];
+  if (pinned) return pinned;
+  return fetchAwsPriceFromBulkApi(instanceType);
 }
 
 // ── Azure Pricing ──────────────────────────────────────────────────────────────
@@ -388,18 +415,17 @@ export default async function handler(req, res) {
     const awsEquivInstance = cleanInstanceType(aiResult.recommendations?.aws?.equivalent_instance?.instance_type ?? '');
     const gcpEquivInstance = cleanInstanceType(aiResult.recommendations?.gcp?.equivalent_instance?.instance_type ?? '');
 
-    const [awsData, azurePrice, gcpSkus] = await Promise.all([
-      fetchAwsPricingData(),
+    const [awsPrice, azurePrice, gcpSkus] = await Promise.all([
+      lookupAwsPrice(awsInstance),
       lookupAzurePrice(azureInstance),
       fetchGcpSkus(),
     ]);
 
     const gcpComponentPrices = gcpSkus ? buildGcpComponentPrices(gcpSkus) : {};
-    const awsPrice = lookupAwsPrice(awsData, awsInstance);
     const gcpPrice = lookupGcpPrice(gcpComponentPrices, gcpInstance);
 
     const equivPricing = {
-      aws:   awsEquivInstance ? lookupAwsPrice(awsData, awsEquivInstance)       : null,
+      aws:   awsEquivInstance ? await lookupAwsPrice(awsEquivInstance) : null,
       azure: null, // Azure equiv would need an extra async API call — omit for now
       gcp:   gcpEquivInstance ? lookupGcpPrice(gcpComponentPrices, gcpEquivInstance) : null,
     };
