@@ -20,7 +20,7 @@ A working AI-powered tool that translates plain-language AI workload description
 ## Tech Stack
 
 - **AI engine** — Anthropic Claude Sonnet via API
-- **Pricing data** — AWS Pricing API, Azure Retail Pricing API, GCP Cloud Billing API
+- **Pricing data** — Azure Retail Pricing API (live), GCP Cloud Billing API (live), AWS pinned reference table (quarterly updated)
 - **Runtime** — Node.js (serve.js for local CORS proxy)
 - **Frontend** — Vanilla HTML, CSS, JavaScript
 
