@@ -4,6 +4,7 @@
 // combined recommendation + pricing in one response.
 
 import Anthropic from '@anthropic-ai/sdk';
+import { PricingClient, GetProductsCommand } from '@aws-sdk/client-pricing';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -214,13 +215,25 @@ async function getAiRecommendation(workload, sizingBlock, workloadType) {
 }
 
 // ── AWS Pricing ────────────────────────────────────────────────────────────────
-// Pinned instead of fetched: the AWS bulk pricing file (us-east-1 EC2 offers) is
-// 50MB+ of JSON covering every instance/OS/tenancy combination, and downloading +
-// parsing it in this serverless function's memory budget was causing OOM crashes
-// in production. selectInstance() in index.html only ever picks AWS instances from
-// this exact set (g6.*/p4d/p4de/p5 pre-computed, g5.* as the AI's stated no-precompute
-// fallback), so pinning covers every reachable case. Prices are on-demand Linux,
-// us-east-1, verified live against the AWS Price List Bulk API — re-verify periodically.
+// Live via the AWS Price List Query API (GetProducts), not the Bulk API: the bulk
+// offer file (us-east-1 EC2 offers) is 50MB+ of JSON covering every instance/OS/
+// tenancy combination, and downloading + parsing it in this serverless function's
+// memory budget was causing OOM crashes in production. GetProducts supports
+// server-side filters (instanceType, operatingSystem, tenancy, location, ...) so
+// each request returns only the matching SKU — no bulk download. Requires
+// AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY with pricing:GetProducts permission
+// (picked up automatically by the SDK's default credential chain). The Pricing
+// service only has endpoints in us-east-1 and ap-south-1, regardless of which
+// region's prices you're querying — hence the hardcoded client region below.
+const pricingClient = new PricingClient({ region: 'us-east-1' });
+
+const AWS_LOCATION = 'US East (N. Virginia)'; // Price List API's display name for us-east-1
+
+// Fallback if the live query API is unreachable or misconfigured (e.g. credentials
+// not yet provisioned). selectInstance() in index.html only ever picks AWS instances
+// from this exact set (g6.*/p4d/p4de/p5 pre-computed, g5.* as the AI's stated
+// no-precompute fallback), so this covers every reachable case. Verified live against
+// the AWS Price List API — re-verify periodically since it is not auto-refreshed.
 const AWS_PINNED_PRICES = {
   'g5.xlarge':    { hourlyUSD: 1.006,  vcpu: '4',   memory: '16 GiB',   gpu: '1', gpuMemory: '24 GB' },
   'g5.2xlarge':   { hourlyUSD: 1.212,  vcpu: '8',   memory: '32 GiB',   gpu: '1', gpuMemory: '24 GB' },
@@ -235,44 +248,61 @@ const AWS_PINNED_PRICES = {
   'p5.48xlarge':  { hourlyUSD: 55.04,     vcpu: '192', memory: '2048 GiB', gpu: '8', gpuMemory: '640 GB HBM3' },
 };
 
-const AWS_PRICING_URL =
-  'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json';
+// Reused across invocations while this function's container stays warm — avoids
+// re-querying the same instance type multiple times per request (primary + equivalent)
+// or across back-to-back requests.
+const awsPriceCache = new Map();
 
-// Fallback for an instance type outside the pinned set (should be rare — the AI is
-// instructed to only ever select from that set or explicitly state it's overriding).
-async function fetchAwsPriceFromBulkApi(instanceType) {
-  const r = await fetch(AWS_PRICING_URL);
-  if (!r.ok) throw new Error(`AWS pricing HTTP ${r.status}`);
-  const data = await r.json();
-  for (const [sku, product] of Object.entries(data.products ?? {})) {
-    const a = product.attributes ?? {};
-    if (
-      product.productFamily === 'Compute Instance' &&
-      a.instanceType === instanceType &&
-      a.operatingSystem === 'Linux' &&
-      a.tenancy === 'Shared' &&
-      a.preInstalledSw === 'NA'
-    ) {
-      const onDemand = data.terms?.OnDemand?.[sku];
-      if (!onDemand) continue;
-      for (const term of Object.values(onDemand)) {
-        for (const dim of Object.values(term.priceDimensions ?? {})) {
-          if (dim.unit === 'Hrs') {
-            const price = parseFloat(dim.pricePerUnit?.USD ?? '0');
-            if (price > 0) return { hourlyUSD: price, vcpu: a.vcpu, memory: a.memory, gpu: a.gpu, gpuMemory: a.gpuMemory };
-          }
-        }
+function extractOnDemandHourly(productJson) {
+  const product = JSON.parse(productJson);
+  const a = product.product?.attributes ?? {};
+  for (const term of Object.values(product.terms?.OnDemand ?? {})) {
+    for (const dim of Object.values(term.priceDimensions ?? {})) {
+      if (dim.unit === 'Hrs') {
+        const price = parseFloat(dim.pricePerUnit?.USD ?? '0');
+        if (price > 0) return { hourlyUSD: price, vcpu: a.vcpu, memory: a.memory, gpu: a.gpu, gpuMemory: a.gpuMemory };
       }
     }
   }
   return null;
 }
 
+async function fetchAwsPriceFromQueryApi(instanceType) {
+  const command = new GetProductsCommand({
+    ServiceCode: 'AmazonEC2',
+    Filters: [
+      { Type: 'TERM_MATCH', Field: 'instanceType', Value: instanceType },
+      { Type: 'TERM_MATCH', Field: 'operatingSystem', Value: 'Linux' },
+      { Type: 'TERM_MATCH', Field: 'tenancy', Value: 'Shared' },
+      { Type: 'TERM_MATCH', Field: 'preInstalledSw', Value: 'NA' },
+      { Type: 'TERM_MATCH', Field: 'capacitystatus', Value: 'Used' },
+      { Type: 'TERM_MATCH', Field: 'location', Value: AWS_LOCATION },
+    ],
+    MaxResults: 5,
+  });
+  const result = await pricingClient.send(command);
+  for (const productJson of result.PriceList ?? []) {
+    const price = extractOnDemandHourly(productJson);
+    if (price) return price;
+  }
+  return null;
+}
+
 async function lookupAwsPrice(instanceType) {
   if (!instanceType) return null;
-  const pinned = AWS_PINNED_PRICES[instanceType];
-  if (pinned) return pinned;
-  return fetchAwsPriceFromBulkApi(instanceType);
+  if (awsPriceCache.has(instanceType)) return awsPriceCache.get(instanceType);
+
+  let price;
+  try {
+    price = await fetchAwsPriceFromQueryApi(instanceType);
+    if (!price) price = AWS_PINNED_PRICES[instanceType] ?? null;
+  } catch (err) {
+    console.error(`[AIFA] AWS Query API failed for ${instanceType}, using pinned fallback:`, err.message);
+    price = AWS_PINNED_PRICES[instanceType] ?? null;
+  }
+
+  awsPriceCache.set(instanceType, price);
+  return price;
 }
 
 // ── Azure Pricing ──────────────────────────────────────────────────────────────
