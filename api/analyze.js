@@ -295,9 +295,14 @@ async function lookupAwsPrice(instanceType) {
   let price;
   try {
     price = await fetchAwsPriceFromQueryApi(instanceType);
-    if (!price) price = AWS_PINNED_PRICES[instanceType] ?? null;
+    if (price) {
+      console.log(`[AIFA] AWS Query API live price for ${instanceType}: $${price.hourlyUSD}/hr`);
+    } else {
+      console.warn(`[AIFA] AWS Query API returned no matching product for ${instanceType} — using pinned fallback`);
+      price = AWS_PINNED_PRICES[instanceType] ?? null;
+    }
   } catch (err) {
-    console.error(`[AIFA] AWS Query API failed for ${instanceType}, using pinned fallback:`, err.message);
+    console.error(`[AIFA] AWS Query API failed for ${instanceType} (${err.name}: ${err.message}) — using pinned fallback`);
     price = AWS_PINNED_PRICES[instanceType] ?? null;
   }
 
