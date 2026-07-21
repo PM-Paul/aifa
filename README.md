@@ -8,7 +8,7 @@ A working AI-powered tool that translates plain-language AI workload description
 
 - **AI product management** — problem statement, personas, requirements, roadmap, and iterative prototype validation documented throughout development
 - **Working AI prototype** — live Anthropic API integration with GPU configuration reasoning, throughput-based fleet sizing, and GPU-optimal quantization
-- **Live pricing integrations** — real-time cost data from Azure Retail Pricing API and GCP Cloud Billing API; AWS pricing uses a pinned reference table (g5, g6, p4d, p4de, p5 families) updated quarterly
+- **Live pricing integrations** — real-time cost data from AWS Price List Query API, Azure Retail Pricing API, and GCP Cloud Billing API
 - **Engineering rigor** — 7-case regression test suite, pinned reference values for consistent recommendations, explicit VRAM and throughput math
 
 ## How It Works
@@ -20,7 +20,7 @@ A working AI-powered tool that translates plain-language AI workload description
 ## Tech Stack
 
 - **AI engine** — Anthropic Claude Sonnet via API
-- **Pricing data** — Azure Retail Pricing API (live), GCP Cloud Billing API (live), AWS pinned reference table (quarterly updated)
+- **Pricing data** — AWS Price List Query API (live), Azure Retail Pricing API (live), GCP Cloud Billing API (live)
 - **Runtime** — Node.js (serve.js for local CORS proxy)
 - **Frontend** — Vanilla HTML, CSS, JavaScript
 
