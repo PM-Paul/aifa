@@ -1,12 +1,14 @@
 # AIFA — AI Factory Advisor
 
+**Live Demo: https://aifa-rho.vercel.app/**
+
 A working AI-powered tool that translates plain-language AI workload descriptions into accurate, multi-cloud infrastructure cost comparisons across AWS, Azure, and Google Cloud. Built as a portfolio project demonstrating end-to-end AI product management and hands-on AI engineering.
 
 ## What This Project Demonstrates
 
 - **AI product management** — problem statement, personas, requirements, roadmap, and iterative prototype validation documented throughout development
 - **Working AI prototype** — live Anthropic API integration with GPU configuration reasoning, throughput-based fleet sizing, and GPU-optimal quantization
-- **Live pricing integrations** — real-time cost data from AWS, Azure, and GCP public pricing APIs
+- **Live pricing integrations** — real-time cost data from Azure Retail Pricing API and GCP Cloud Billing API; AWS pricing uses a pinned reference table (g5, g6, p4d, p4de, p5 families) updated quarterly
 - **Engineering rigor** — 7-case regression test suite, pinned reference values for consistent recommendations, explicit VRAM and throughput math
 
 ## How It Works
@@ -39,6 +41,7 @@ node serve.js
 
 ## Project Status
 
+- Live Demo: https://aifa-rho.vercel.app/
 - ✅ Stage 0 core validation complete — AI engine produces consistent, throughput-based fleet cost comparisons across AWS, Azure, and GCP
 - 🔨 v1 in progress — core cost comparison working, additional engine refinements and UI features under active development
 - 📋 Full requirements, roadmap, and PM artifacts available on request
