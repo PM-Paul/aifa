@@ -5,8 +5,40 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { PricingClient, GetProductsCommand } from '@aws-sdk/client-pricing';
+import { Redis } from '@upstash/redis';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ── Rate Limiting ────────────────────────────────────────────────────────────────
+// 10 assessments per IP per rolling 24h window, backed by Upstash Redis. Each key is
+// created with a 24h TTL on its first hit so it auto-expires and the limit resets
+// daily without a cron job. Fails open (allows the request but logs) if Redis itself
+// is unreachable — a Redis outage shouldn't take down the whole app.
+const RATE_LIMIT_MAX = 10;
+const RATE_LIMIT_WINDOW_SECONDS = 24 * 60 * 60;
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
+
+function getClientIp(req) {
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (forwardedFor) return forwardedFor.split(',')[0].trim();
+  return req.socket?.remoteAddress ?? 'unknown';
+}
+
+async function checkRateLimit(ip) {
+  const key = `ratelimit:analyze:${ip}`;
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS);
+    return count <= RATE_LIMIT_MAX;
+  } catch (err) {
+    console.error(`[AIFA] Rate limit check failed for ${ip}, failing open:`, err.message);
+    return true;
+  }
+}
 
 const SYSTEM_PROMPT = [
   'You are a cloud infrastructure advisor specializing in GPU compute for AI workloads.',
@@ -438,6 +470,16 @@ function lookupGcpPrice(componentPrices, instanceType) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+
+  const clientIp = getClientIp(req);
+  const withinLimit = await checkRateLimit(clientIp);
+  if (!withinLimit) {
+    res.status(429).json({
+      error: 'Daily limit reached',
+      message: 'You have reached the limit of 10 free assessments per day. Please try again tomorrow.',
+    });
     return;
   }
 
