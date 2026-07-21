@@ -1235,6 +1235,61 @@ function sizeForTier(gpu, paramsBillions, workload) {
 
 function round2(n) { return Math.round(n * 100) / 100; }
 
+// ── Deterministic instance selection ────────────────────────────────────────────
+// Maps a GPU tier + replica count + workload type to a specific per-provider SKU, so
+// the AI no longer chooses hardware — only explains why the given instance fits.
+// `replicas` buckets (1 / 2 / 4+) are read as ">=", so an unlisted in-between value
+// (e.g. 3) rounds up to the next bucket rather than under-provisioning.
+// nvlinkRequired reflects each provider's actual interconnect requirement (NVLink for
+// AWS/GCP multi-GPU tensor/training instances; Azure's ND-series use InfiniBand, but
+// the same field name covers "requires high-speed GPU-to-GPU interconnect").
+// Returns null when the tier/provider combination falls outside the lookup table —
+// the caller (and the AI, per SYSTEM_PROMPT) treats that as a genuine edge case.
+function selectInstance(tier, replicas, workloadType, provider) {
+  if (provider === 'aws') {
+    if (tier === 'L4/A10G') {
+      if (replicas >= 4) return { sku: 'g6.48xlarge', gpuDescription: '8×NVIDIA L4 24GB', nvlinkRequired: false };
+      if (replicas >= 2) return { sku: 'g6.12xlarge', gpuDescription: '4×NVIDIA L4 24GB', nvlinkRequired: false };
+      return { sku: 'g6.xlarge', gpuDescription: '1×NVIDIA L4 24GB', nvlinkRequired: false };
+    }
+    if (tier === 'A100_40') return { sku: 'p4d.24xlarge', gpuDescription: '8×NVIDIA A100 40GB SXM4', nvlinkRequired: true };
+    if (tier === 'A100_80') return { sku: 'p4de.24xlarge', gpuDescription: '8×NVIDIA A100 80GB SXM4', nvlinkRequired: true };
+    if (tier === 'H100')    return { sku: 'p5.48xlarge', gpuDescription: '8×NVIDIA H100 80GB SXM5', nvlinkRequired: true };
+    return null;
+  }
+
+  if (provider === 'azure') {
+    if (workloadType === 'Inference') {
+      // FR-089: Azure has no approved NV-series/A10G-class inference SKU — NC24ads_A100_v4
+      // is the floor for every inference workload, regardless of the general tier.
+      return { sku: 'Standard_NC24ads_A100_v4', gpuDescription: '1×NVIDIA A100 80GB', nvlinkRequired: false };
+    }
+    // Training
+    if (tier === 'H100')    return { sku: 'Standard_ND96isr_H100_v5', gpuDescription: '8×NVIDIA H100 80GB', nvlinkRequired: true };
+    if (tier === 'H200')    return { sku: 'Standard_ND96isr_H200_v5', gpuDescription: '8×NVIDIA H200 141GB', nvlinkRequired: true }; // not reachable via current tier system — kept for completeness
+    if (tier === 'A100_40' || tier === 'A100_80') return { sku: 'Standard_ND96asr_A100_v4', gpuDescription: '8×NVIDIA A100 40GB', nvlinkRequired: true };
+    return null;
+  }
+
+  if (provider === 'gcp') {
+    if (tier === 'L4/A10G') {
+      if (replicas >= 4) return { sku: 'g2-standard-48', gpuDescription: '4×NVIDIA L4 24GB', nvlinkRequired: false };
+      if (replicas >= 2) return { sku: 'g2-standard-24', gpuDescription: '2×NVIDIA L4 24GB', nvlinkRequired: false };
+      return { sku: 'g2-standard-4', gpuDescription: '1×NVIDIA L4 24GB', nvlinkRequired: false };
+    }
+    if (tier === 'A100_40') {
+      if (replicas >= 4) return { sku: 'a2-highgpu-4g', gpuDescription: '4×NVIDIA A100 40GB', nvlinkRequired: true };
+      if (replicas >= 2) return { sku: 'a2-highgpu-2g', gpuDescription: '2×NVIDIA A100 40GB', nvlinkRequired: true };
+      return { sku: 'a2-highgpu-1g', gpuDescription: '1×NVIDIA A100 40GB', nvlinkRequired: false };
+    }
+    if (tier === 'A100_80') return { sku: 'a2-ultragpu-1g', gpuDescription: '1×NVIDIA A100 80GB', nvlinkRequired: false };
+    if (tier === 'H100')    return { sku: 'a3-highgpu-8g', gpuDescription: '8×NVIDIA H100 80GB', nvlinkRequired: true };
+    return null;
+  }
+
+  return null;
+}
+
 function computeSizing(formData) {
   // Skip entirely when no parameter count was provided — let the AI reason freely.
   if (formData.modelspec?.type !== 'size') return null;
@@ -1338,6 +1393,17 @@ function computeSizing(formData) {
     };
   }
 
+  // Deterministic instance selection per provider. Azure uses its own substitute
+  // tier/replicas when one was computed above (inference below the A100_80 floor);
+  // training never gets a substitute, so it falls back to the general tier.
+  const instanceSelection = {
+    aws: selectInstance(selectedGpu.key, replicasPerInstance, workload, 'aws'),
+    azure: azureSubstitute
+      ? selectInstance(azureSubstitute.gpu_tier, azureSubstitute.replicas_per_instance, workload, 'azure')
+      : selectInstance(selectedGpu.key, replicasPerInstance, workload, 'azure'),
+    gcp: selectInstance(selectedGpu.key, replicasPerInstance, workload, 'gcp'),
+  };
+
   return {
     supported: true,
     model_params_billions: paramsBillions,
@@ -1358,6 +1424,7 @@ function computeSizing(formData) {
     boundary_flag: boundaryFlag,
     boundary_reason: boundaryReason,
     next_tier_alternative: nextTierAlternative,
+    instance_selection: instanceSelection,
     azure_substitute: azureSubstitute,
   };
 }
@@ -1388,6 +1455,16 @@ function formatSizingBlock(sizing) {
     lines.push('- Instances needed: not computed — concurrent users, interaction length, or latency was not provided. Omit fleet fields (instances_needed/replicas_per_instance) from the JSON.');
   }
 
+  if (sizing.instance_selection) {
+    lines.push('- Pre-selected instances (use these exact SKUs — do not choose a different instance):');
+    for (const [provider, label] of [['aws', 'AWS'], ['azure', 'Azure'], ['gcp', 'GCP']]) {
+      const inst = sizing.instance_selection[provider];
+      lines.push(inst
+        ? `  ${label}: ${inst.sku} (${inst.gpuDescription})${inst.nvlinkRequired ? ' — requires NVLink/high-speed interconnect' : ''}`
+        : `  ${label}: not available for this tier/workload combination — select an instance yourself and state explicitly that you are overriding the pre-computed selection`);
+    }
+  }
+
   lines.push(`- Boundary condition: ${sizing.boundary_flag}${sizing.boundary_flag ? ` — ${sizing.boundary_reason}` : ''}`);
 
   if (sizing.next_tier_alternative) {
@@ -1414,18 +1491,24 @@ const SYSTEM_PROMPT = [
   'You are a cloud infrastructure advisor specializing in GPU compute for AI workloads.',
   '',
   'A PRE-COMPUTED SIZING block appears at the start of the user message. All VRAM, quantization,',
-  'TPS, and fleet-sizing math has already been performed in JavaScript before this request was',
-  'sent — use those values directly, do not recalculate any of them. Your job is to map the',
-  'pre-computed GPU tier onto a specific instance/SKU per provider, explain the recommendation,',
-  'and surface relevant considerations. When the block says sizing is not available (no parameter',
-  'count was provided, or the model needs tensor parallelism beyond a single GPU), reason about',
-  'sizing yourself from the workload description, same as before.',
+  'TPS, fleet-sizing, and instance selection math has already been performed in JavaScript before',
+  'this request was sent — use those values directly, do not recalculate any of them and do not',
+  'select different instances. The block\'s "Pre-selected instances" list gives you the exact SKU',
+  'to use for each provider. Your job is to explain why the pre-computed instances were selected',
+  'and surface relevant considerations — not to choose hardware yourself. When the block says',
+  'sizing or an instance is not available (no parameter count was provided, the model needs tensor',
+  'parallelism beyond a single GPU, or a provider has no pre-selected instance for this tier/',
+  'workload combination), reason about sizing and instance choice yourself from the workload',
+  'description, and state explicitly that you are overriding the pre-computed selection.',
   '',
-  'CRITICAL: The PRE-COMPUTED SIZING block is authoritative. You must select instances matching',
-  'the pre-computed GPU tier. Do not select a different GPU family regardless of catalog options.',
+  'CRITICAL: The PRE-COMPUTED SIZING block is authoritative, including the specific instance SKUs',
+  'under "Pre-selected instances." Use those exact instances. Do not select a different GPU family',
+  'or instance size regardless of catalog options. Only override when the block itself says an',
+  'instance is not available for a provider — a genuine edge case, and even then you must state',
+  'explicitly that you are overriding the pre-computed selection and explain why.',
   '',
   'Follow these rules strictly:',
-  '1. PRIMARY: For each provider, select the specific instance/SKU that matches the pre-computed GPU tier (or, when no pre-computed block is available, your own VRAM/latency/throughput reasoning). Hardware may differ across providers — AWS may use A10G (g5/g6) or Inferentia2 (inf2) where Azure/GCP would use A100, if that is what the pre-computed tier (or your own reasoning) requires. Price must never influence which instance is selected; price is only used afterward to calculate cost.',
+  '1. PRIMARY: For each provider, use the specific instance/SKU given in the PRE-COMPUTED SIZING block\'s "Pre-selected instances" list directly (or, when no pre-computed instance is available for that provider, your own VRAM/latency/throughput reasoning — state explicitly that you are overriding). Hardware differs across providers by design — AWS may use A10G/L4 (g5/g6) where Azure/GCP use A100 for the same workload; that is expected, not something to reconcile. Price must never influence which instance is selected; price is only used afterward to calculate cost.',
   '2. EQUIVALENT (optional): If your primary for a provider uses meaningfully different GPU hardware than the other providers\' primaries (e.g. A10G vs A100-80GB), add an equivalent_instance field showing the strict hardware-equivalent option and a one-sentence explanation of why the primary is the better value.',
   '3. Write the pre-computed VRAM figure and selected GPU tier into the gpu_tier field (e.g. "15.6GB required — L4/A10G tier (24GB)"). When no pre-computed block is available, state your own VRAM estimate and reasoning there instead.',
   '4. AWS over-provisioning: when the pre-computed (or your own) replicas_per_instance is 3 or more, add a replica_info object to the aws recommendation: { "replica_count": N, "model_vram_gb": X, "instance_vram_gb": Y }, using the pre-computed VRAM figures. In the aws rationale, explain that the effective per-replica cost drops significantly at scale and that multi-replica deployment on a single over-provisioned instance is the standard production pattern for AWS in this case.',
