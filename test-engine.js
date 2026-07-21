@@ -15,19 +15,10 @@ const INTERACTION_TYPES = {
 
 // Scaling scenarios — tested in parallel to verify monotonic instance count growth
 const SCENARIOS = [
-  { label: "S1",  workloadType: "inference", modelParams: "13B", concurrentUsers: 10,   interactionType: "Short Q&A"       },
-  { label: "S2",  workloadType: "inference", modelParams: "13B", concurrentUsers: 200,  interactionType: "Conversational"  },
-  { label: "S3",  workloadType: "inference", modelParams: "13B", concurrentUsers: 1000, interactionType: "Document Analysis"},
+  { label: "S1",  paramsBillions: 13, concurrentUsers: 10,   interactionType: "Short Q&A"        },
+  { label: "S2",  paramsBillions: 13, concurrentUsers: 200,  interactionType: "Conversational"   },
+  { label: "S3",  paramsBillions: 13, concurrentUsers: 1000, interactionType: "Document Analysis" },
 ];
-
-const TRAINING_CONFIG = {
-  workloadType: "training",
-  modelParams: "13B",
-  trainingType: "full fine-tune",
-  datasetTokens: "5B",
-  targetHours: 48,
-  sequenceLength: 2048,
-};
 
 // ── Token resolution (inference) ─────────────────────────────────────────────
 
@@ -52,408 +43,427 @@ near real-time response required (target first token < 500ms, full response < 10
 We pay for colocation by the rack, not by GPU count — minimizing the number of GPU instances \
 is a hard constraint even at higher per-instance cost. Evaluate the full range of GPU instance \
 generations including the latest B200 and GB200 nodes to find the option with the fewest instances. \
-The model is ${cfg.modelParams} parameters. No compliance requirements. ${base}`;
+The model is ${cfg.paramsBillions} billion parameters. No compliance requirements. ${base}`;
   }
 
   return `We're launching a new consumer AI app that generates personalized workout plans. \
 We expect very uneven usage — quiet overnight, moderate during lunch, and peak traffic during \
 morning and evening hours with up to 10x the average load. We're a startup, so minimizing \
 baseline costs matters, but we can't afford performance degradation during peaks. \
-The model is ${cfg.modelParams} parameters. No compliance requirements. ${base}`;
+The model is ${cfg.paramsBillions} billion parameters. No compliance requirements. ${base}`;
 }
 
-function buildTrainingWorkload(cfg) {
-  return `We're fine-tuning a ${cfg.modelParams} parameter language model on a domain-specific \
-fitness dataset for a consumer AI app. The dataset contains ${cfg.datasetTokens} tokens of \
-curated exercise and nutrition content. We need ${cfg.trainingType} (not LoRA) for maximum \
-output quality. Target completion time is ${cfg.targetHours} hours to meet our product launch \
-timeline. Sequence length is ${cfg.sequenceLength} tokens. No compliance requirements.`;
+// ── Pre-computed sizing — ported verbatim from index.html's computeSizing() /
+// formatSizingBlock() (also used by validation-dataset.js). The shipped app performs
+// all VRAM/TPS/fleet-sizing math in JavaScript before the API call; this harness
+// mirrors that so it exercises (and benchmarks) what's actually running in production.
+// ---------------------------------------------------------------------------
+const SIZING_GPU_TIERS = [
+  { key: "L4/A10G", vram: 24, tpsTable: { 7: 1200, 13: 800 },                       quantization: "INT8" },
+  { key: "A100_40",  vram: 40, tpsTable: { 13: 1100, 30: 450, 70: null },           quantization: "BF16" },
+  { key: "A100_80",  vram: 80, tpsTable: { 7: 2200, 13: 1300, 30: 600, 70: 450 },   quantization: "BF16" },
+  { key: "H100",     vram: 80, tpsTable: { 7: 5000, 13: 3000, 30: 1500, 70: 1200 }, quantization: "BF16" },
+];
+const SIZING_LATENCY_SECONDS = { "Real-time": 3, "Near real-time": 10 };
+const VRAM_OVERHEAD = 0.20;
+const MFU = 0.45; // reserved — not yet consumed by the formulas below
+const HEADROOM = 1.20;
+const SIZING_MODEL_CLASSES = [7, 13, 30, 70];
+
+function pickModelClass(paramsBillions) {
+  for (const c of SIZING_MODEL_CLASSES) if (paramsBillions <= c) return c;
+  return SIZING_MODEL_CLASSES[SIZING_MODEL_CLASSES.length - 1]; // clamp to 70B for anything larger
 }
 
-// ── System prompt with explicit per-workload-type rules ───────────────────────
+function sizeForTier(gpu, paramsBillions, workloadType) {
+  const quantFactor = workloadType === "Inference" ? (gpu.quantization === "INT8" ? 0.5 : 1.0) : 1.0;
+  const vramPerReplica = paramsBillions * 2 * quantFactor * (1 + VRAM_OVERHEAD);
+  return { quantFactor, vramPerReplica };
+}
 
-const SYSTEM_PROMPT = `You are a cloud infrastructure expert specializing in GPU compute for \
-AI workloads. Recommend the optimal GPU instance type on AWS, Azure, and GCP.
+function round2(n) { return Math.round(n * 100) / 100; }
 
-GPU EFFECTIVE COMPUTE REFERENCE — use these exact values in all calculations (45% MFU pre-applied):
-  H100 SXM5  BF16 : 445  TFLOPS  [989  TF peak × 0.45]
-  A100 SXM4  BF16 : 140  TFLOPS  [312  TF peak × 0.45]
-  A10 / A10G INT8 : 113  TOPS    [250  TOPS peak × 0.45]
-  B200 / GB200 FP8: 2000 TOPS    [~4,455 TOPS peak × 0.45]
+function computeSizing({ paramsBillions, workloadType, concurrentUsers, tokensPerInteraction, latency }) {
+  if (!paramsBillions || paramsBillions <= 0) return null;
 
-VLLM INFERENCE TPS REFERENCE — per-replica values by model class, vLLM continuous batching.
-Use these exact per-replica values. Never estimate or derive from TFLOPS. "N/A" means the model
-class does not fit that GPU's VRAM even at the GPU's optimal quantization tier — never select
-that GPU for that model class.
+  const modelClass = pickModelClass(paramsBillions);
 
-  7B class (INT8 ~7 GB / BF16 ~14 GB / FP8 ~7 GB weights):
-    A10G       INT8 : 1,200 TPS/replica  [24 GB VRAM → 1 replica/GPU]
-    L4         INT8 : 1,000 TPS/replica  [24 GB VRAM → 1 replica/GPU; same L4 chip is used in
-                                          AWS G6 — apply this value to G6 recommendations too]
-    A100 40 GB BF16 : 2,000 TPS/replica  [40 GB VRAM → 2 replicas/GPU]
-    A100 80 GB BF16 : 2,200 TPS/replica  [80 GB VRAM → 5 replicas/GPU]
-    H100 80 GB BF16 : 5,000 TPS/replica  [80 GB VRAM → 5 replicas/GPU]
-    RTX PRO 6000 Blackwell FP8 : 2,000 TPS/replica  [96 GB VRAM → 13 replicas/GPU; AWS G7e, GCP G4]
+  let selectedIdx = -1, selectedGpu = null, selectedQuantFactor = null, selectedVram = null;
+  for (let i = 0; i < SIZING_GPU_TIERS.length; i++) {
+    const gpu = SIZING_GPU_TIERS[i];
+    const { quantFactor, vramPerReplica } = sizeForTier(gpu, paramsBillions, workloadType);
+    if (gpu.vram >= vramPerReplica) {
+      selectedIdx = i;
+      selectedGpu = gpu;
+      selectedQuantFactor = quantFactor;
+      selectedVram = vramPerReplica;
+      break;
+    }
+  }
+  if (!selectedGpu) {
+    return {
+      supported: false,
+      reason: "model exceeds single-GPU VRAM on every pinned tier — needs tensor parallelism, not precomputed",
+      model_params_billions: paramsBillions,
+      model_class: modelClass,
+    };
+  }
 
-  13B class (INT8 ~13 GB / BF16 ~26 GB / FP8 ~13 GB weights):
-    A10G       INT8 :   800 TPS/replica  [24 GB VRAM → 1 replica/GPU]
-    L4         INT8 :   650 TPS/replica  [24 GB VRAM → 1 replica/GPU; same L4 chip is used in
-                                          AWS G6 — apply this value to G6 recommendations too]
-    A100 40 GB BF16 : 1,100 TPS/replica  [40 GB VRAM → 1 replica/GPU]
-    A100 80 GB BF16 : 1,300 TPS/replica  [80 GB VRAM → 3 replicas/GPU; larger KV-cache headroom enables bigger batches]
-    H100 80 GB BF16 : 3,000 TPS/replica  [80 GB VRAM → 3 replicas/GPU]
-    RTX PRO 6000 Blackwell FP8 : 1,400 TPS/replica  [96 GB VRAM → 7 replicas/GPU; AWS G7e, GCP G4]
+  const replicasPerInstance = Math.max(1, Math.floor(selectedGpu.vram / selectedVram));
+  const tpsPerReplica = selectedGpu.tpsTable[modelClass] ?? null;
 
-  30B class (BF16 ~60 GB / FP8 ~30 GB weights — does not fit A10G/L4 at any supported quantization):
-    A10G       : N/A
-    L4         : N/A
-    A100 40 GB BF16 :   450 TPS/replica  [40 GB VRAM per GPU; requires TP=2 (2×40 GB) to hold weights]
-    A100 80 GB BF16 :   600 TPS/replica  [80 GB VRAM → 1 replica/GPU]
-    H100 80 GB BF16 : 1,500 TPS/replica  [80 GB VRAM → 1 replica/GPU]
-    RTX PRO 6000 Blackwell FP8 :   700 TPS/replica  [96 GB VRAM → 3 replicas/GPU; AWS G7e, GCP G4 —
-                                    use this GPU for 30B inference that doesn't fit A10G/L4 but
-                                    doesn't need the cost/complexity of an A100 instance]
+  const latencySeconds = latency ? (SIZING_LATENCY_SECONDS[latency] ?? null) : null;
+  const hasFleetInputs = concurrentUsers != null && tokensPerInteraction != null && latencySeconds != null && tpsPerReplica != null;
+  let peakTps = null, instancesNeeded = null;
+  if (hasFleetInputs) {
+    peakTps = (concurrentUsers * tokensPerInteraction) / latencySeconds;
+    instancesNeeded = Math.ceil((peakTps / (replicasPerInstance * tpsPerReplica)) * HEADROOM);
+  }
 
-  70B class (BF16 ~140 GB weights — does not fit A10G/L4/A100-40GB at any supported quantization):
-    A10G       : N/A
-    L4         : N/A
-    A100 40 GB : N/A
-    A100 80 GB BF16 :   450 TPS/replica  [80 GB VRAM per GPU; requires TP=2 (2×80 GB) to hold weights]
-    H100 80 GB BF16 : 1,200 TPS/replica  [80 GB VRAM per GPU; requires TP=2 (2×80 GB) to hold weights]
+  let boundaryFlag = selectedVram > selectedGpu.vram * 0.80;
+  let boundaryReason = boundaryFlag
+    ? `Model VRAM (${round2(selectedVram)}GB) uses over 80% of the ${selectedGpu.key} tier's ${selectedGpu.vram}GB capacity — close to needing the next tier up.`
+    : null;
 
-  Select tps_per_replica from the row matching this workload's model parameter count. If the
-  model size falls between two rows (e.g. 20B), use the nearest larger class and disclose the
-  approximation per the ESTIMATION TRANSPARENCY DISCLOSURES section below.
+  let nextTierAlternative = null;
+  if (instancesNeeded != null && instancesNeeded > 20) {
+    boundaryFlag = true;
+    const nextGpu = SIZING_GPU_TIERS[selectedIdx + 1];
+    if (nextGpu) {
+      const { quantFactor: nextQuantFactor, vramPerReplica: nextVram } = sizeForTier(nextGpu, paramsBillions, workloadType);
+      const nextReplicas = Math.max(1, Math.floor(nextGpu.vram / nextVram));
+      const nextTps = nextGpu.tpsTable[modelClass] ?? null;
+      const nextInstances = nextTps != null ? Math.ceil((peakTps / (nextReplicas * nextTps)) * HEADROOM) : null;
+      nextTierAlternative = {
+        gpu_tier: nextGpu.key,
+        quant_factor: nextQuantFactor,
+        vram_per_replica_gb: round2(nextVram),
+        replicas_per_instance: nextReplicas,
+        tps_per_replica: nextTps,
+        instances_needed: nextInstances,
+      };
+      boundaryReason = `Fleet size is large (${instancesNeeded} instances on ${selectedGpu.key}) — ${nextGpu.key} would need only ${nextInstances ?? "?"} instances at higher per-GPU cost.`;
+    } else {
+      boundaryReason = `Fleet size is large (${instancesNeeded} instances on ${selectedGpu.key}) — this is the largest pinned tier, no higher tier available to reduce instance count.`;
+    }
+  }
 
-AWS INSTANCE PRICES (us-east-1, on-demand Linux) — use these exact values for hourly_cost_usd.
-Never estimate AWS A10G prices. These prices are used ONLY after an instance is selected, to
-calculate fleet cost — never to choose which instance to select.
-  g5.xlarge  (1×A10G  24 GB,  4 vCPU,  16 GB): $1.006/hr
-  g5.2xlarge (1×A10G  24 GB,  8 vCPU,  32 GB): $1.212/hr
-  g5.4xlarge (1×A10G  24 GB, 16 vCPU,  64 GB): $1.624/hr
-  g5.12xlarge(4×A10G  96 GB, 48 vCPU, 192 GB): $5.672/hr   [4 replicas per instance when 13B INT8; tps/instance = 3,200]
-  g5.48xlarge(8×A10G 192 GB, 96 vCPU, 384 GB): $16.288/hr  [8 replicas per instance when 13B INT8; tps/instance = 6,400]
-  Use g5.12xlarge or g5.48xlarge ONLY to pack multiple independent single-GPU replicas onto
-  one machine when the workload explicitly requires minimizing instance count — never for
-  tensor-parallel inference (see FR-094 below) or for training (see FR-093 below), since g5's
-  A10G GPUs have no NVLink between them — and never because it produces a lower fleet cost.
+  // Azure has no approved inference SKU below A100_80 (FR-089) — when the general tier
+  // lands below that, Azure needs its own precomputed numbers at A100_80.
+  let azureSubstitute = null;
+  if (workloadType === "Inference" && selectedGpu.vram < 80) {
+    const azureGpu = SIZING_GPU_TIERS.find((g) => g.key === "A100_80");
+    const { quantFactor: azQuantFactor, vramPerReplica: azVram } = sizeForTier(azureGpu, paramsBillions, workloadType);
+    const azReplicas = Math.max(1, Math.floor(azureGpu.vram / azVram));
+    const azTps = azureGpu.tpsTable[modelClass] ?? null;
+    const azInstances = (hasFleetInputs && azTps != null) ? Math.ceil((peakTps / (azReplicas * azTps)) * HEADROOM) : null;
+    azureSubstitute = {
+      gpu_tier: azureGpu.key,
+      quant_factor: azQuantFactor,
+      vram_per_replica_gb: round2(azVram),
+      replicas_per_instance: azReplicas,
+      tps_per_replica: azTps,
+      instances_needed: azInstances,
+    };
+  }
 
-AWS NEW GPU FAMILIES — no pinned prices here; these are newer families without a verified
-reference price, so estimate hourly_cost_usd the same way as GCP (accurate training-data
-pricing, medium confidence) rather than pinning a number. Recommend them whenever they best
-fit the workload — being unpinned does not mean avoid them:
-  G6 family  (1×L4 24 GB per GPU — e.g. g6.xlarge/g6.2xlarge/g6.4xlarge; g6.12xlarge = 4×L4;
-             g6.48xlarge = 8×L4): PREFER over G5 for 7B–13B-class inference — better
-             price/performance. Use the L4 row of the TPS reference table for G6 sizing.
-  G7e family (RTX PRO 6000 Blackwell, 96 GB VRAM per GPU; launched Jan 2026): use for
-             30B-class inference that does not fit A10G/L4 (24 GB) but does not need an A100 —
-             see the RTX PRO 6000 Blackwell row of the TPS reference table.
+  return {
+    supported: true,
+    model_params_billions: paramsBillions,
+    model_class: modelClass,
+    workload: workloadType,
+    quantization: selectedGpu.quantization,
+    quant_factor: selectedQuantFactor,
+    vram_per_replica_gb: round2(selectedVram),
+    gpu_tier: selectedGpu.key,
+    gpu_tier_vram_gb: selectedGpu.vram,
+    replicas_per_instance: replicasPerInstance,
+    tps_per_replica: tpsPerReplica,
+    concurrent_users: concurrentUsers,
+    tokens_per_interaction: tokensPerInteraction,
+    latency_seconds: latencySeconds,
+    peak_tps: peakTps != null ? round2(peakTps) : null,
+    instances_needed: instancesNeeded,
+    boundary_flag: boundaryFlag,
+    boundary_reason: boundaryReason,
+    next_tier_alternative: nextTierAlternative,
+    azure_substitute: azureSubstitute,
+  };
+}
 
-AZURE INSTANCE PRICES (eastus, on-demand Linux) — use these exact values for hourly_cost_usd.
-Never estimate Azure prices. These prices are used ONLY after an instance is selected, to
-calculate fleet cost — never to choose which instance to select.
-  Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   [NEVER recommend — see FR-089 below]
-  Standard_NC24ads_A100_v4 (1×A100  80 GB): $3.673/hr
-  Standard_NC48ads_A100_v4 (2×A100  80 GB): $7.346/hr
-  Standard_ND96isr_H100_v5 (8×H100  80 GB): $98.32/hr
-  Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr    [NEVER recommend — see FR-089 below]
-  Use multi-GPU SKUs (NC48ads, ND96isr) ONLY when the workload requires more replicas on a
-  single machine than a single-GPU instance can hold — never because it produces a lower
-  fleet cost. NC48ads and ND96isr have NVLink and are the correct choice when tensor
-  parallelism (FR-094) or training (FR-093) requires it.
+function formatSizingBlock(sizing) {
+  if (!sizing) {
+    return "PRE-COMPUTED SIZING: not available — no parameter count was provided. Reason about GPU tier and sizing yourself from the workload description below.";
+  }
+  if (!sizing.supported) {
+    return "PRE-COMPUTED SIZING: model VRAM exceeds every pinned single-GPU tier (up to 80GB) — this requires tensor parallelism across multiple GPUs, which is not precomputed. Reason about the correct multi-GPU configuration yourself from the workload description below.";
+  }
 
-AZURE INFERENCE GPU RESTRICTION (FR-089): NEVER recommend an NV-series SKU
-(Standard_NV6ads_A10_v5 or Standard_NV36ads_A10_v5) for ANY Azure recommendation — inference,
-tensor-parallel inference (FR-094), or training (FR-093). NV-series is a graphics/virtual-
-workstation line, not validated for production LLM workloads; the prices above are listed for
-completeness only. Always use an NC-series or ND-series SKU for Azure inference instead:
-  - Standard_NC24ads_A100_v4 (1×A100 80GB, BF16) is Azure's floor inference instance. Use this
-    even when AWS/GCP would use an A10G/L4-class GPU for the same workload — Azure has no
-    approved low-cost A10G-tier inference SKU in this catalog.
-  - Standard_NC48ads_A100_v4 or Standard_ND96isr_H100_v5 when the workload needs more VRAM or
-    throughput than a single A100 80GB provides (e.g. tensor parallelism, or higher TPS/replica).
-  Because Azure's GPU family differs from A10G/L4 in this case, recompute tps_per_replica and
-  replicas_per_instance from the A100 80GB row of the TPS reference table for Azure — do not
-  reuse AWS/GCP's A10G/L4 numbers for an Azure NC24ads_A100_v4 recommendation.
-  CATALOG GAP DISCLOSURE: whenever this substitution applies (i.e. AWS/GCP would use an
-  A10G/L4-class GPU but Azure is forced onto NC24ads_A100_v4), append this exact sentence to
-  the Azure rationale: "Note: Azure does not offer a cost-competitive L4 or A10G-class inference
-  instance after excluding NV series. NC24ads_A100_v4 is Azure's minimum approved inference
-  configuration and may be over-provisioned for small workloads — AWS G6 or GCP G2 offer
-  equivalent throughput at significantly lower cost for this workload size."
+  const lines = [
+    "PRE-COMPUTED SIZING (use these values directly — do not recalculate):",
+    `- Model VRAM required: ${sizing.vram_per_replica_gb}GB (${sizing.model_params_billions}B params × 2 × ${sizing.quant_factor} × 1.20 overhead)`,
+    `- Selected GPU tier: ${sizing.gpu_tier} (${sizing.gpu_tier_vram_gb}GB VRAM)`,
+    `- Replicas per instance: ${sizing.replicas_per_instance}`,
+  ];
 
-AZURE NEW GPU FAMILIES — no pinned prices here; estimate hourly_cost_usd via accurate
-training-data pricing (medium confidence) rather than pinning a number:
-  Standard_NC40ads_H100_v5 (1×H100 NVL, 80 GB): the PREFERRED single-GPU Azure H100 inference
-             SKU. Use this instead of jumping straight to the 8-GPU Standard_ND96isr_H100_v5
-             whenever the workload only needs one H100-class replica (i.e. it does not require
-             tensor parallelism or fleet-packing across many GPUs).
-  Standard_ND96isr_H200_v5 (8×H200, 141 GB each, NVLink): PREFER over Standard_ND96isr_H100_v5
-             for large training workloads — higher per-GPU VRAM and memory bandwidth improve
-             training throughput at the same GPU count.
+  if (sizing.tps_per_replica != null) {
+    lines.push(`- TPS per replica: ${sizing.tps_per_replica} (${sizing.model_class}B-class reference value)`);
+  }
 
-GCP NEW GPU FAMILIES:
-  G4 family  (RTX PRO 6000, 96 GB VRAM per GPU): Generally Available, but pricing is not yet in
-             the public GCP Cloud Billing API. Use for the same case as AWS G7e — 30B-class
-             inference that does not fit A10G/L4 but does not need an A100. When G4 is the
-             right recommendation, still surface it: set hourly_cost_usd to null and add
-             "Contact GCP for current G4 pricing" as its own consideration entry. Do NOT
-             fabricate a price for G4.
-  A4X family (GB200 NVL72): requires reserved capacity — NOT available on-demand. Do not
-             recommend A4X as a primary or equivalent_instance recommendation. Mention it only
-             in "considerations", and only for frontier-scale workloads (100B+ parameter
-             training or massive-scale inference), noting that reserved capacity must be
-             arranged with GCP sales ahead of time.
+  if (sizing.peak_tps != null) {
+    lines.push(`- Peak TPS required: ${sizing.peak_tps} (${sizing.concurrent_users} users × ${sizing.tokens_per_interaction} tokens ÷ ${sizing.latency_seconds}s)`);
+    lines.push(`- Instances needed: ${sizing.instances_needed} per provider (formula: ceil(${sizing.peak_tps} ÷ (${sizing.replicas_per_instance} × ${sizing.tps_per_replica}) × 1.20))`);
+  } else {
+    lines.push("- Instances needed: not computed — concurrent users, interaction length, or latency was not provided. Omit fleet fields (instances_needed/replicas_per_instance) from the JSON.");
+  }
 
-=== INFERENCE WORKLOAD RULES ===
-GPU-optimal quantization — apply based on the GPU family you recommend. Weight size in GB =
-model_params_billions × bytes_per_param (INT8/FP8 = 1 byte/param, BF16/FP16 = 2 bytes/param):
-  H100, A100 family  → BF16  (native BF16 Tensor Cores; no quality penalty vs FP16)
-  A10G, L4, T4       → INT8  (INT8 Tensor Cores; ~2× throughput vs FP16)
-  B200, GB200        → FP8   (Transformer Engine FP8 via vLLM ≥0.5; ~2× vs BF16, ~4× vs FP16;
-                               supported on p6, ND B200 v6, a4)
-  RTX PRO 6000 Blackwell → FP8  (same Blackwell Transformer Engine as B200/GB200; 96 GB VRAM;
-                               AWS G7e family, GCP G4 family)
+  lines.push(`- Boundary condition: ${sizing.boundary_flag}${sizing.boundary_flag ? ` — ${sizing.boundary_reason}` : ""}`);
 
-CRITICAL RULE — SEPARATION OF SELECTION FROM COST:
-Instance type and size selection must be based entirely on workload requirements.
-Price must never influence which instance is selected. Price is only used after
-the instance is selected, to calculate fleet cost.
+  if (sizing.next_tier_alternative) {
+    const alt = sizing.next_tier_alternative;
+    lines.push(`- Next-tier alternative: ${alt.gpu_tier} (${alt.replicas_per_instance} replicas/instance, ${alt.tps_per_replica ?? "N/A"} TPS/replica, ${alt.instances_needed ?? "N/A"} instances needed)`);
+  }
 
-Instance selection — ALWAYS follow these steps in order, using workload requirements only:
-  a. Select the GPU FAMILY (A10G, L4, A100-40GB, A100-80GB, H100, B200/GB200) based only on
-     the VRAM needed at the GPU-optimal quantization tier above, and the latency/throughput
-     profile of the workload. Do not compare prices across GPU families at this step.
-  b. model_vram_gb = model weight size at the precision selected above.
-  c. optimal_replicas_per_instance = floor(instance_vram_gb / model_vram_gb)  [min 1],
-     computed for the smallest single-GPU instance size available in the chosen GPU family.
-  d. Select the smallest instance size within the chosen GPU family that accommodates
-     optimal_replicas_per_instance. Only move to a larger (multi-GPU) instance size when
-     the workload itself requires it — e.g. the model does not fit a single GPU's VRAM, or
-     the workload explicitly requires minimizing instance count. NEVER select a larger
-     instance because it produces a lower total_fleet_cost_per_hour.
+  if (sizing.azure_substitute) {
+    const az = sizing.azure_substitute;
+    lines.push(`- Azure substitute (FR-089 — no approved ${sizing.gpu_tier}-class inference SKU on Azure): use ${az.gpu_tier} instead (${az.replicas_per_instance} replicas/instance, ${az.tps_per_replica ?? "N/A"} TPS/replica, ${az.instances_needed ?? "N/A"} instances needed) for the Azure recommendation only.`);
+  }
 
-TENSOR PARALLELISM INTERCONNECT RULE (FR-094): Tensor parallelism is required whenever
-model_vram_gb (from step b) > single_gpu_vram_gb for the selected GPU family — i.e. a single
-replica must be split across more than one GPU. Whenever this condition holds, ALWAYS
-recommend an instance with NVLink connecting those GPUs. This is separate from the
-training-workload HIGH-SPEED INTERCONNECT RULE (FR-093) below, which applies to training.
-  AWS:   NEVER recommend the g5 family for tensor-parallel inference — g5's A10G GPUs have
-         no NVLink between them. Use p4d.24xlarge (8×A100 40GB, NVLink) or p5.48xlarge
-         (8×H100, NVLink) instead, sized to the number of GPUs the model requires.
-  Azure: use a multi-GPU NC-series SKU (e.g. Standard_NC48ads_A100_v4) or an ND-series SKU
-         (e.g. Standard_ND96isr_H100_v5) — both provide NVLink between GPUs. Never use a
-         multi-GPU NV-series SKU for tensor-parallel inference.
-  GCP:   use A2 or A3 family (NVLink): a2-highgpu-2g/4g/8g or a3-highgpu-8g, sized to the
-         number of GPUs the model requires.
-  In the rationale for every tensor-parallel inference recommendation, include this exact
-  disclosure:
-    "Multi-GPU tensor parallelism required — this instance includes NVLink for high-bandwidth
-    GPU-to-GPU communication. Without NVLink, inter-GPU communication would severely limit
-    inference throughput and increase latency."
+  return lines.join("\n");
+}
 
-Throughput sizing (workload math only — price plays no role):
-  1. peak_tps = concurrent_users × tokens_per_interaction / target_response_seconds
-  2. tps_per_replica = look up from VLLM INFERENCE TPS REFERENCE table for the selected
-     GPU family — never estimate
-  3. replicas_per_instance = optimal_replicas_per_instance from instance selection step c/d above
-  4. tps_per_instance = tps_per_replica × replicas_per_instance
-  5. instances_needed = ceil(peak_tps / tps_per_instance × 1.20)   [20% headroom]
-     CRITICAL — NO QUALITATIVE OVERRIDE: the result of this formula is final. Never round it
-     down, and never substitute a smaller number because a single instance's raw (pre-headroom)
-     capacity already exceeds peak_tps. The ×1.20 multiplier IS the headroom — "ample headroom"
-     is a description of the formula's result, never a justification for reducing the instance
-     count below what step 5 computed. If instances_needed computes to 2, recommend 2 instances.
+// Per-provider view of sizing — Azure uses its FR-089 substitute when one applies.
+function sizingForProvider(sizing, provider) {
+  if (!sizing || !sizing.supported) return null;
+  if (provider === "azure" && sizing.azure_substitute) return sizing.azure_substitute;
+  return sizing;
+}
 
-Fleet cost — computed AFTER instance selection, using the price tables above:
-  6. hourly_cost_usd = on-demand Linux price for the exact instance type selected above.
-     For Azure: look up from the AZURE INSTANCE PRICES table above — never estimate.
-     For AWS/GCP: use accurate training-data pricing for us-east-1 / us-central1.
-     CRITICAL: hourly_cost_usd in the JSON MUST equal the price stated in the rationale.
-     They must always be identical. A mismatch between JSON and rationale is always wrong.
-  7. total_fleet_cost_per_hour = instances_needed × hourly_cost_usd
-  8. total_fleet_cost_per_month = total_fleet_cost_per_hour × 730
-  9. effective_cost_per_replica = hourly_cost_usd / replicas_per_instance
-     CRITICAL: instances_needed is a COMPUTED NUMBER, never 1 unless the formula genuinely yields 1.
-     The instances_needed JSON field MUST equal the value stated in the rationale. They must always
-     match — do not let the rationale explain away or override the formula's result (e.g. "one
-     instance is sufficient because of the available headroom" is NEVER valid reasoning; see the
-     NO QUALITATIVE OVERRIDE rule under Throughput sizing above). Do NOT copy placeholder values
-     from the schema — replace every numeric field with your calculated result.
+// ── System prompt — same stripped-down prompt as index.html/validation-dataset.js:
+// no VRAM formula, no TPS reference table, no fleet-sizing formula, no MFU/quantization
+// instructions. Claude maps the pre-computed GPU tier onto a specific instance/SKU per
+// provider and explains the recommendation; it does not recalculate sizing.
+// ---------------------------------------------------------------------------
+const SYSTEM_PROMPT = [
+  "You are a cloud infrastructure advisor specializing in GPU compute for AI workloads.",
+  "",
+  "A PRE-COMPUTED SIZING block appears at the start of the user message. All VRAM, quantization,",
+  "TPS, and fleet-sizing math has already been performed in JavaScript before this request was",
+  "sent — use those values directly, do not recalculate any of them. Your job is to map the",
+  "pre-computed GPU tier onto a specific instance/SKU per provider, explain the recommendation,",
+  "and surface relevant considerations. When the block says sizing is not available (no parameter",
+  "count was provided, or the model needs tensor parallelism beyond a single GPU), reason about",
+  "sizing yourself from the workload description, same as before.",
+  "",
+  "CRITICAL: The PRE-COMPUTED SIZING block is authoritative. You must select instances matching",
+  "the pre-computed GPU tier. Do not select a different GPU family regardless of catalog options.",
+  "",
+  "Follow these rules strictly:",
+  "1. PRIMARY: For each provider, select the specific instance/SKU that matches the pre-computed GPU tier (or, when no pre-computed block is available, your own VRAM/latency/throughput reasoning). Hardware may differ across providers — AWS may use A10G (g5/g6) or Inferentia2 (inf2) where Azure/GCP would use A100, if that is what the pre-computed tier (or your own reasoning) requires. Price must never influence which instance is selected; price is only used afterward to calculate cost.",
+  "2. EQUIVALENT (optional): If your primary for a provider uses meaningfully different GPU hardware than the other providers' primaries (e.g. A10G vs A100-80GB), add an equivalent_instance field showing the strict hardware-equivalent option and a one-sentence explanation of why the primary is the better value.",
+  "3. Write the pre-computed VRAM figure and selected GPU tier into the gpu_tier field (e.g. \"15.6GB required — L4/A10G tier (24GB)\"). When no pre-computed block is available, state your own VRAM estimate and reasoning there instead.",
+  "4. AWS over-provisioning: when the pre-computed (or your own) replicas_per_instance is 3 or more, add a replica_info object to the aws recommendation: { \"replica_count\": N, \"model_vram_gb\": X, \"instance_vram_gb\": Y }, using the pre-computed VRAM figures. In the aws rationale, explain that the effective per-replica cost drops significantly at scale and that multi-replica deployment on a single over-provisioned instance is the standard production pattern for AWS in this case.",
+  "5. HIGH-SPEED INTERCONNECT RULE (FR-093): For training workloads requiring more than one GPU,",
+  "   ALWAYS recommend an instance with NVLink (or NVSwitch) or InfiniBand connecting the GPUs.",
+  "   AWS: NEVER recommend the g5 family for multi-GPU training — g5 has no NVLink between its",
+  "   A10G GPUs. Use p4d.24xlarge (8×A100 40GB, NVLink + EFA) or p5.48xlarge (8×H100, NVLink + EFA).",
+  "   Azure: NEVER recommend the NV series for training — NV series has no InfiniBand. Use ND",
+  "   series only: Standard_ND96asr_A100_v4, Standard_ND96isr_H100_v5, or Standard_ND96isr_H200_v5",
+  "   (all InfiniBand). PREFER Standard_ND96isr_H200_v5 over Standard_ND96isr_H100_v5 for large",
+  "   training workloads — higher per-GPU VRAM and memory bandwidth improve training throughput",
+  "   at the same GPU count.",
+  "   GCP: Use A2 or A3 family (NVLink): a2-highgpu-8g or a3-highgpu-8g.",
+  "   In the rationale for every multi-GPU training recommendation, include this disclosure (fill",
+  "   in NVLink or InfiniBand as appropriate for the provider/instance): \"This instance includes",
+  "   [NVLink/InfiniBand] high-speed GPU interconnect, required for efficient multi-GPU training.",
+  "   Without high-speed interconnect, inter-GPU communication becomes a bottleneck that",
+  "   significantly reduces training throughput.\"",
+  "6. PROVIDER INSTANCE SELECTION & PRICING:",
+  "   TENSOR PARALLELISM INTERCONNECT RULE (FR-094): tensor parallelism is required whenever the",
+  "   PRE-COMPUTED SIZING block reports sizing as not available because the model exceeds every",
+  "   single-GPU tier (or, absent a pre-computed block, whenever your own VRAM estimate exceeds a",
+  "   single GPU's capacity in the tier you select). Whenever this holds, ALWAYS recommend an",
+  "   instance with NVLink connecting the GPUs. This is separate from the training-workload",
+  "   interconnect rule above, which applies to training.",
+  "     AWS: NEVER recommend the g5 family for tensor-parallel inference — g5's A10G GPUs have",
+  "     no NVLink between them. Use p4d.24xlarge (8×A100 40GB, NVLink) or p5.48xlarge (8×H100,",
+  "     NVLink) instead, sized to the number of GPUs the model requires.",
+  "     Azure: use a multi-GPU NC-series SKU (e.g. Standard_NC48ads_A100_v4) or an ND-series SKU",
+  "     (e.g. Standard_ND96isr_H100_v5) — both provide NVLink. Never use a multi-GPU NV-series",
+  "     SKU for tensor-parallel inference.",
+  "     GCP: use A2 or A3 family (NVLink): a2-highgpu-2g/4g/8g or a3-highgpu-8g, sized to the",
+  "     number of GPUs the model requires.",
+  "     In the rationale for every tensor-parallel inference recommendation, include this exact",
+  "     disclosure: \"Multi-GPU tensor parallelism required — this instance includes NVLink for",
+  "     high-bandwidth GPU-to-GPU communication. Without NVLink, inter-GPU communication would",
+  "     severely limit inference throughput and increase latency.\"",
+  "   AWS INSTANCE PRICES (us-east-1, on-demand Linux) — use exact values; never estimate. These",
+  "   prices are used ONLY after an instance is selected, to calculate fleet cost — never to",
+  "   choose which instance to select:",
+  "     g5.xlarge   (1×A10G  24 GB):  $1.006/hr",
+  "     g5.2xlarge  (1×A10G  24 GB):  $1.212/hr",
+  "     g5.4xlarge  (1×A10G  24 GB):  $1.624/hr",
+  "     g5.12xlarge (4×A10G  96 GB):  $5.672/hr  [4 replicas/instance for 13B INT8]",
+  "     g5.48xlarge (8×A10G 192 GB): $16.288/hr  [8 replicas/instance for 13B INT8]",
+  "     Use g5.12xlarge/g5.48xlarge ONLY to pack multiple independent single-GPU replicas onto",
+  "     one machine when the pre-computed replicas_per_instance requires it, or when the workload",
+  "     explicitly requires minimizing instance count — never for tensor-parallel inference (see",
+  "     the rule above) or training (see rule 5 above), since g5's A10G GPUs have no NVLink",
+  "     between them — and never because it produces a lower fleet cost.",
+  "   AWS NEW GPU FAMILIES — no pinned prices here; these are newer families without a verified",
+  "   reference price, so estimate hourly_cost_usd the same way as GCP (accurate training-data",
+  "   pricing, medium confidence) rather than pinning a number. Being unpinned does not mean",
+  "   avoid them — recommend whenever they best fit the pre-computed tier (or your own reasoning):",
+  "     G6 family (1×L4 24 GB per GPU — g6.xlarge/g6.2xlarge/g6.4xlarge; g6.12xlarge = 4×L4;",
+  "     g6.48xlarge = 8×L4): PREFER over G5 for 7B–13B-class inference — better price/performance.",
+  "     G7e family (RTX PRO 6000 Blackwell, 96 GB VRAM per GPU; launched Jan 2026): use for",
+  "     30B-class inference that does not fit A10G/L4 (24 GB) but does not need an A100.",
+  "   AZURE INSTANCE PRICES (eastus, on-demand Linux) — used ONLY after an instance is selected,",
+  "   to calculate fleet cost — never to choose which instance to select:",
+  "     Standard_NV6ads_A10_v5   (1×A10G  24 GB): $0.454/hr   [NEVER recommend — see FR-089 below]",
+  "     Standard_NC24ads_A100_v4 (1×A100  80 GB): $3.673/hr",
+  "     Standard_NC48ads_A100_v4 (2×A100  80 GB): $7.346/hr",
+  "     Standard_ND96isr_H100_v5 (8×H100  80 GB): $98.32/hr",
+  "     Standard_NV36ads_A10_v5  (4×A10G  96 GB): $3.20/hr   [NEVER recommend — see FR-089 below]",
+  "     Use multi-GPU SKUs (NC48ads, ND96isr) ONLY when the pre-computed (or your own) replicas",
+  "     require more capacity on one machine than a single-GPU instance can hold — never because",
+  "     it produces a lower fleet cost. NC48ads and ND96isr have NVLink and are correct when",
+  "     tensor parallelism or training requires it.",
+  "   AZURE INFERENCE GPU RESTRICTION (FR-089): NEVER recommend an NV-series SKU",
+  "   (Standard_NV6ads_A10_v5 or Standard_NV36ads_A10_v5) for ANY Azure recommendation —",
+  "   inference, tensor-parallel inference, or training. NV-series is a graphics/virtual-",
+  "   workstation line, not validated for production LLM workloads; the prices above are listed",
+  "   for completeness only. Always use an NC-series or ND-series SKU for Azure inference instead:",
+  "     Standard_NC24ads_A100_v4 (1×A100 80GB, BF16) is Azure's floor inference instance. Use",
+  "     this even when AWS/GCP would use an A10G/L4-class GPU for the same workload — Azure has",
+  "     no approved low-cost A10G-tier inference SKU in this catalog.",
+  "     Standard_NC48ads_A100_v4 or Standard_ND96isr_H100_v5 when the workload needs more VRAM",
+  "     or throughput than a single A100 80GB provides (e.g. tensor parallelism, or higher",
+  "     TPS/replica).",
+  "     When the PRE-COMPUTED SIZING block includes an \"Azure substitute\" line, use those exact",
+  "     numbers for the Azure recommendation's replicas_per_instance/instances_needed instead of",
+  "     the general values — do not reuse AWS/GCP's numbers for an Azure NC24ads_A100_v4",
+  "     recommendation.",
+  "     CATALOG GAP DISCLOSURE: whenever this substitution applies (i.e. AWS/GCP would use an",
+  "     A10G/L4-class GPU but Azure is forced onto NC24ads_A100_v4), append this exact sentence",
+  "     to the Azure rationale: \"Note: Azure does not offer a cost-competitive L4 or A10G-class",
+  "     inference instance after excluding NV series. NC24ads_A100_v4 is Azure's minimum approved",
+  "     inference configuration and may be over-provisioned for small workloads — AWS G6 or GCP",
+  "     G2 offer equivalent throughput at significantly lower cost for this workload size.\"",
+  "   AZURE NEW GPU FAMILIES — no pinned prices here; estimate hourly_cost_usd via accurate",
+  "   training-data pricing (medium confidence) rather than pinning a number:",
+  "     Standard_NC40ads_H100_v5 (1×H100 NVL, 80 GB): the PREFERRED single-GPU Azure H100",
+  "     inference SKU. Use this instead of jumping straight to the 8-GPU Standard_ND96isr_H100_v5",
+  "     whenever the workload only needs one H100-class replica (no tensor parallelism or",
+  "     fleet-packing across many GPUs needed).",
+  "     Standard_ND96isr_H200_v5 (8×H200, 141 GB each, NVLink): PREFER over",
+  "     Standard_ND96isr_H100_v5 for large training workloads — higher per-GPU VRAM and memory",
+  "     bandwidth improve training throughput at the same GPU count.",
+  "   GCP NEW GPU FAMILIES:",
+  "     G4 family (RTX PRO 6000, 96 GB VRAM per GPU): Generally Available, but pricing is not yet",
+  "     in the public GCP Cloud Billing API. Use for the same case as AWS G7e — 30B-class",
+  "     inference that does not fit A10G/L4 but does not need an A100. When G4 is the right",
+  "     recommendation, still surface it: set hourly_cost_usd to null and add \"Contact GCP for",
+  "     current G4 pricing\" as its own consideration entry. Do NOT fabricate a price for G4.",
+  "     A4X family (GB200 NVL72): requires reserved capacity — NOT available on-demand. Do not",
+  "     recommend A4X as a primary or equivalent_instance recommendation. Mention it only in",
+  "     \"considerations\", and only for frontier-scale workloads (100B+ parameter training or",
+  "     massive-scale inference), noting that reserved capacity must be arranged with GCP sales",
+  "     ahead of time.",
+  "   CRITICAL RULE — SEPARATION OF SELECTION FROM COST: instance selection must be based",
+  "   entirely on the pre-computed GPU tier (or, absent one, workload requirements). Price must",
+  "   never influence which instance is selected. Price is only used after the instance is",
+  "   selected, to calculate fleet cost.",
+  "   a. hourly_cost_usd = price for the exact instance type selected above (fetched after selection).",
+  "      For Azure: use the AZURE INSTANCE PRICES table above — never estimate or approximate.",
+  "   b. total_fleet_cost_per_hour = instances_needed × hourly_cost_usd",
+  "   c. CRITICAL: hourly_cost_usd in the JSON MUST equal the price stated in the rationale. They",
+  "      must always match. The instances_needed JSON field MUST equal the pre-computed value (or",
+  "      the Azure-substitute value, when applicable) — do not let the rationale explain away or",
+  "      override the pre-computed number (e.g. \"one instance is sufficient because of the",
+  "      available headroom\" is NEVER valid reasoning).",
+  "   d. Return instances_needed and replicas_per_instance in each provider recommendation,",
+  "      copied from the PRE-COMPUTED SIZING block (or its Azure substitute for Azure).",
+  "   e. Omit fleet fields entirely when the PRE-COMPUTED SIZING block has no instances_needed",
+  "      value (no concurrency data was provided).",
+  "7. BOUNDARY CONDITIONS: when the PRE-COMPUTED SIZING block's boundary condition is true, add a",
+  "   consideration presenting BOTH the selected tier and the next-tier alternative (or Azure",
+  "   substitute, when that is what triggered it) as options, with a one-line fleet cost",
+  "   comparison between them, so the user can choose based on their own cost/simplicity",
+  "   tradeoff — do not silently pick one over the other.",
+  "8. SKIPPED-INPUT DISCLOSURE: whenever a required input is missing from the workload (e.g.",
+  "   concurrent users, interaction length/token count, model parameter count, or latency target),",
+  "   add an entry to \"considerations\" stating explicitly what default value was assumed in its",
+  "   place, and how the recommendation would change under a different input value.",
+  "   GENERIC ESTIMATION CAVEATS — DO NOT ADD TO \"considerations\": general estimation-methodology",
+  "   caveats (GPU utilization/MFU assumptions, VRAM overhead assumptions, serving-framework",
+  "   assumptions, TPS-reference-value caveats, or region/pricing caveats) are already shown once,",
+  "   statically, in the UI — never add an entry restating any of these in \"considerations\". Only",
+  "   include considerations that are specific to this workload or recommendation (e.g. MoE",
+  "   active-parameter notes, NVLink/InfiniBand interconnect requirements, TTFT/latency risk",
+  "   warnings, catalog-gap disclosures, boundary-condition options, or the skipped-input",
+  "   disclosure above).",
+  "9. ABSOLUTE CONSISTENCY RULE: instances_needed in the JSON output MUST equal the final",
+  "   instances_needed value derived in the rationale — no exceptions. If your rationale works",
+  "   through multiple candidate numbers before reaching a final answer, the JSON field must match",
+  "   ONLY the final number the rationale concludes with — never an intermediate value, and never",
+  "   a different number than what the rationale states. Before finalizing your response, re-read",
+  "   each provider's rationale, identify the number it concludes with, and confirm that",
+  "   provider's instances_needed JSON field is IDENTICAL to it. A mismatch between the JSON",
+  "   field and the rationale's concluding number is never acceptable, regardless of how the",
+  "   discrepancy arose.",
+  "10. Respond with valid JSON only — no markdown, no prose, just the raw JSON object.",
+].join("\n");
 
-=== TRAINING WORKLOAD RULES ===
-Precision: BF16 for activations/weights, FP32 for optimizer states. NO quantization — ever.
-Instance selection: prefer large multi-GPU instances (8-GPU nodes) for training efficiency; \
-NVLink/NVSwitch bandwidth and higher MFU justify the larger unit size.
+// ── JSON response schema — unified for inference/training, same shape as
+// index.html/validation-dataset.js. ────────────────────────────────────────────
+function buildUserPrompt(workload, sizing) {
+  return `${formatSizingBlock(sizing)}
 
-HIGH-SPEED INTERCONNECT RULE (FR-093): For training workloads requiring more than one GPU,
-ALWAYS recommend an instance with NVLink (or NVSwitch) or InfiniBand connecting the GPUs.
-  AWS:   NEVER recommend the g5 family for multi-GPU training — g5 has no NVLink between its
-         A10G GPUs. Use p4d.24xlarge (8×A100 40GB, NVLink + EFA) or p5.48xlarge
-         (8×H100, NVLink + EFA) instead.
-  Azure: NEVER recommend the NV series for training — NV series has no InfiniBand. Use ND
-         series only: Standard_ND96asr_A100_v4, Standard_ND96isr_H100_v5, or
-         Standard_ND96isr_H200_v5 (all InfiniBand). PREFER Standard_ND96isr_H200_v5 over
-         Standard_ND96isr_H100_v5 for large training workloads — higher per-GPU VRAM and
-         memory bandwidth improve training throughput at the same GPU count.
-  GCP:   Use A2 or A3 family (NVLink): a2-highgpu-8g or a3-highgpu-8g.
-  In the rationale for every multi-GPU training recommendation, include this disclosure
-  (fill in NVLink or InfiniBand as appropriate for the provider/instance):
-    "This instance includes [NVLink/InfiniBand] high-speed GPU interconnect, required for
-    efficient multi-GPU training. Without high-speed interconnect, inter-GPU communication
-    becomes a bottleneck that significantly reduces training throughput."
+Analyze this AI inference workload and recommend the best GPU instance \
+for each cloud provider:
 
-Dataset throughput sizing:
-  1. total_flops = 6 × model_params × dataset_tokens   [standard transformer FLOPs estimate]
-  2. effective_flops_per_gpu = peak_TFLOPS_BF16 × MFU  [assume 45% MFU for well-tuned setup]
-  3. total_gpu_hours = total_flops / effective_flops_per_gpu
-  4. instance_hours = ceil(total_gpu_hours / gpus_per_instance)
-  5. instance_count = ceil(instance_hours / target_hours) with 10% headroom
+${workload}
 
-Do NOT apply TPS or concurrent-user logic to training workloads.
-Do NOT apply quantization to training workloads.
-
-=== ESTIMATION TRANSPARENCY DISCLOSURES (FR-096, FR-098) ===
-Every estimated value that materially affects the recommendation MUST be disclosed in \
-"considerations" as its own entry, stating: what value was used, why it was chosen, and what \
-impact it has on the recommendation. Do not omit any applicable disclosure, summarize it away, \
-or fold multiple disclosures into one vague sentence. Fill in the exact templates below with \
-this workload's actual computed values:
-
-1. TPS DISCLOSURE (every inference recommendation):
-   "Throughput estimated at [X] TPS/replica for a [model class]-class model on [GPU type] \
-(reference value for vLLM continuous batching). Actual throughput depends on your specific \
-model checkpoint, quantization, batch size, and serving configuration. A 50% difference in \
-actual throughput would change instance count by approximately 2x."
-
-2. MFU DISCLOSURE (every recommendation — inference and training):
-   "GPU utilization assumed at 45% of theoretical peak ([X] effective TFLOPS/TOPS). Optimized \
-deployments typically achieve 50-65% MFU, which would reduce instance count by 15-30%."
-
-3. VRAM OVERHEAD DISCLOSURE (every inference recommendation):
-   "VRAM calculation includes 20% overhead beyond model weights for KV cache and activations. \
-Workloads with long context windows or large batch sizes may require additional overhead."
-
-4. SERVING FRAMEWORK DISCLOSURE (FR-076 — must remain present in every recommendation):
-   Note that production deployments using optimized serving stacks (vLLM, TensorRT-LLM) for \
-inference, or training frameworks (DeepSpeed, FSDP) for training, may achieve a higher MFU than \
-the 45% assumed here, and therefore need fewer instances than this recommendation. This may be \
-combined with the MFU disclosure above, but must not be omitted.
-
-5. SKIPPED-INPUT DISCLOSURE (whenever a required input is missing from the workload \
-description — e.g. concurrent users, interaction length/token count, model parameter count, or \
-latency target): state explicitly what default value was assumed in its place, and how the \
-recommendation would change under a different input value.
-
-Populate "considerations" with disclosures 1–4 for every applicable recommendation (1 and 3 \
-apply to inference only; 2 and 4 apply to both inference and training), plus disclosure 5 \
-whenever an input was missing and defaulted.
-
-=== ABSOLUTE CONSISTENCY RULE ===
-instances_needed in the JSON output MUST equal the final instances_needed value derived in the
-rationale — no exceptions. If your rationale works through multiple candidate numbers before
-reaching a final answer (e.g. per-GPU-family comparisons, or intermediate steps for different
-parameter-count assumptions), the JSON field must match ONLY the final number the rationale
-concludes with — never an intermediate value, and never a different number than what the
-rationale states. Before finalizing your response, re-read each provider's rationale, identify
-the number it concludes with, and confirm that provider's instances_needed JSON field is
-IDENTICAL to it. A mismatch between the JSON field and the rationale's concluding number is
-never acceptable, regardless of how the discrepancy arose.
-
-Always respond with valid JSON only — no markdown, no prose, just the raw JSON object.`;
-
-// ── JSON response schemas ─────────────────────────────────────────────────────
-
-const INFERENCE_SCHEMA = `{
-  "workload_type": "inference",
-  "workload_summary": "brief description",
-  "quantization": {
-    "precision": "BF16|INT8|FP8",
-    "gpu_family": "which GPU family drove this choice",
-    "rationale": "one sentence explaining why this precision tier was selected"
-  },
-  "throughput_analysis": {
-    "peak_tps_required": 0,
-    "tps_per_instance": 0,
-    "sizing_rationale": "step-by-step derivation of instance count"
-  },
+Respond with this exact JSON structure:
+{
+  "workload_summary": "brief description of the workload requirements",
+  "gpu_tier": "pre-computed VRAM figure and selected tier, or your own estimate if unavailable",
   "recommendations": {
     "aws": {
-      "instance_type": "...", "gpu_model": "...", "instance_count": "<COMPUTED: ceil(peak_tps/tps_per_instance×1.20)>",
-      "quantization_applied": {
-        "precision": "BF16|INT8|FP8",
-        "effective_weight_gb": "<COMPUTED: model_params × bytes_per_param>",
-        "throughput_vs_fp16": "e.g. 2x (INT8) or 4x (FP8)"
-      },
-      "instances_needed": "<COMPUTED: ceil(peak_tps/(replicas_per_instance×tps_per_replica)×1.20)>",
-      "replicas_per_instance": "<COMPUTED: floor(instance_vram_gb/model_vram_gb)>",
-      "tps_per_replica": "<COMPUTED: tps_per_instance/replicas_per_instance>",
-      "hourly_cost_usd": "<COMPUTED: on-demand price for this instance type>",
-      "total_fleet_cost_per_hour": "<COMPUTED: instances_needed × hourly_cost_usd>",
-      "total_fleet_cost_per_month": "<COMPUTED: total_fleet_cost_per_hour × 730>",
-      "effective_cost_per_replica": "<COMPUTED: hourly_cost_usd / replicas_per_instance>",
-      "rationale": "...", "confidence": "high|medium|low"
+      "instance_type": "e.g. p4d.24xlarge",
+      "gpu_model": "e.g. NVIDIA A100",
+      "instances_needed": 1,
+      "replicas_per_instance": 1,
+      "hourly_cost_usd": 0,
+      "rationale": "why this instance fits the workload",
+      "confidence": "high|medium|low"
     },
     "azure": {
-      "instance_type": "...", "gpu_model": "...", "instance_count": "<COMPUTED: ceil(peak_tps/tps_per_instance×1.20)>",
-      "quantization_applied": {
-        "precision": "BF16|INT8|FP8",
-        "effective_weight_gb": "<COMPUTED: model_params × bytes_per_param>",
-        "throughput_vs_fp16": "e.g. 2x (INT8) or 4x (FP8)"
-      },
-      "instances_needed": "<COMPUTED: ceil(peak_tps/(replicas_per_instance×tps_per_replica)×1.20)>",
-      "replicas_per_instance": "<COMPUTED: floor(instance_vram_gb/model_vram_gb)>",
-      "tps_per_replica": "<COMPUTED: tps_per_instance/replicas_per_instance>",
-      "hourly_cost_usd": "<COMPUTED: on-demand price for this instance type>",
-      "total_fleet_cost_per_hour": "<COMPUTED: instances_needed × hourly_cost_usd>",
-      "total_fleet_cost_per_month": "<COMPUTED: total_fleet_cost_per_hour × 730>",
-      "effective_cost_per_replica": "<COMPUTED: hourly_cost_usd / replicas_per_instance>",
-      "rationale": "...", "confidence": "high|medium|low"
+      "instance_type": "e.g. Standard_ND96asr_v4",
+      "gpu_model": "e.g. NVIDIA A100",
+      "instances_needed": 1,
+      "replicas_per_instance": 1,
+      "hourly_cost_usd": 0,
+      "rationale": "why this instance fits the workload",
+      "confidence": "high|medium|low"
     },
     "gcp": {
-      "instance_type": "...", "gpu_model": "...", "instance_count": "<COMPUTED: ceil(peak_tps/tps_per_instance×1.20)>",
-      "quantization_applied": {
-        "precision": "BF16|INT8|FP8",
-        "effective_weight_gb": "<COMPUTED: model_params × bytes_per_param>",
-        "throughput_vs_fp16": "e.g. 2x (INT8) or 4x (FP8)"
-      },
-      "instances_needed": "<COMPUTED: ceil(peak_tps/(replicas_per_instance×tps_per_replica)×1.20)>",
-      "replicas_per_instance": "<COMPUTED: floor(instance_vram_gb/model_vram_gb)>",
-      "tps_per_replica": "<COMPUTED: tps_per_instance/replicas_per_instance>",
-      "hourly_cost_usd": "<COMPUTED: on-demand price for this instance type>",
-      "total_fleet_cost_per_hour": "<COMPUTED: instances_needed × hourly_cost_usd>",
-      "total_fleet_cost_per_month": "<COMPUTED: total_fleet_cost_per_hour × 730>",
-      "effective_cost_per_replica": "<COMPUTED: hourly_cost_usd / replicas_per_instance>",
-      "rationale": "...", "confidence": "high|medium|low"
+      "instance_type": "e.g. a2-highgpu-8g",
+      "gpu_model": "e.g. NVIDIA A100",
+      "instances_needed": 1,
+      "replicas_per_instance": 1,
+      "hourly_cost_usd": 0,
+      "rationale": "why this instance fits the workload",
+      "confidence": "high|medium|low"
     }
   },
-  "considerations": ["..."]
+  "considerations": ["list of important factors like data residency, scaling, cost"]
 }`;
-
-const TRAINING_SCHEMA = `{
-  "workload_type": "training",
-  "workload_summary": "brief description",
-  "training_analysis": {
-    "total_flops_required": "e.g. 3.9e20",
-    "effective_flops_per_gpu_tflops": 0,
-    "total_gpu_hours": 0,
-    "instance_hours_required": 0,
-    "sizing_rationale": "step-by-step derivation using the FLOPs formula"
-  },
-  "recommendations": {
-    "aws":   { "instance_type": "...", "gpu_model": "...", "instance_count": 1, "precision": "BF16", "estimated_hours": 0, "rationale": "...", "confidence": "high|medium|low" },
-    "azure": { "instance_type": "...", "gpu_model": "...", "instance_count": 1, "precision": "BF16", "estimated_hours": 0, "rationale": "...", "confidence": "high|medium|low" },
-    "gcp":   { "instance_type": "...", "gpu_model": "...", "instance_count": 1, "precision": "BF16", "estimated_hours": 0, "rationale": "...", "confidence": "high|medium|low" }
-  },
-  "considerations": ["..."]
-}`;
-
-function makeInferencePrompt(cfg) {
-  return `Analyze this INFERENCE workload and recommend the best GPU instance for each cloud provider:\n\n${buildInferenceWorkload(cfg)}\n\nRespond with this exact JSON structure:\n${INFERENCE_SCHEMA}`;
 }
 
-function makeTrainingPrompt(cfg) {
-  return `Analyze this TRAINING workload and recommend the best GPU instance for each cloud provider:\n\n${buildTrainingWorkload(cfg)}\n\nRespond with this exact JSON structure:\n${TRAINING_SCHEMA}`;
+function makeInferencePrompt(cfg, sizing) {
+  return buildUserPrompt(buildInferenceWorkload(cfg), sizing);
 }
 
 // ── Query helper ──────────────────────────────────────────────────────────────
@@ -464,7 +474,6 @@ async function query(userPrompt, label) {
   const stream = client.messages.stream({
     model: "claude-sonnet-4-6",
     max_tokens: 16000,
-    thinking: { type: "enabled", budget_tokens: 10000 },
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -488,30 +497,32 @@ async function main() {
   const providers = ["aws", "azure", "gcp"];
   const col = (s, w) => String(s ?? "?").padEnd(w);
 
-  // Compute expected peak TPS from config so we can show it alongside Claude's answer
-  function peakTps(cfg) {
-    const tokens = resolveTokens(cfg);
-    return cfg.concurrentUsers * tokens / 10; // target 10s full response
-  }
-
-  // Fire all three scenarios in parallel
+  // Fire all three scenarios in parallel. Sizing is precomputed in JS before the call —
+  // it's the authoritative source for peak TPS / instances needed, not Claude's echo.
   const results = await Promise.all(
-    SCENARIOS.map((cfg) =>
-      query(
-        makeInferencePrompt(cfg),
+    SCENARIOS.map((cfg) => {
+      const sizing = computeSizing({
+        paramsBillions: cfg.paramsBillions,
+        workloadType: "Inference",
+        concurrentUsers: cfg.concurrentUsers,
+        tokensPerInteraction: resolveTokens(cfg),
+        latency: "Near real-time",
+      });
+      return query(
+        makeInferencePrompt(cfg, sizing),
         `${cfg.label} — ${cfg.concurrentUsers} users, ${interactionLabel(cfg)}`
-      ).then((r) => ({ cfg, ...r }))
-    )
+      ).then((r) => ({ cfg, sizing, ...r }));
+    })
   );
 
   // ── Full results ─────────────────────────────────────────────────────────
-  for (const { cfg, result } of results) {
-    const tps = peakTps(cfg).toLocaleString();
+  for (const { cfg, sizing, result } of results) {
+    const tps = sizing?.peak_tps?.toLocaleString() ?? "?";
     console.log(`\n=== ${cfg.label}: ${cfg.concurrentUsers} users × ${interactionLabel(cfg)} (${tps} peak TPS) ===\n`);
     console.log(JSON.stringify(result, null, 2));
   }
 
-  // ── Scaling comparison table ──────────────────────────────────────────────
+  // ── Scaling comparison table (Claude's echoed instances_needed) ──────────
   console.log("\n=== SCALING COMPARISON ===\n");
 
   const hdr = `${col("Scenario", 40)} ${col("Peak TPS", 11)}` +
@@ -520,49 +531,73 @@ async function main() {
   console.log(hdr);
   console.log("─".repeat(hdr.length + 20));
 
-  for (const { cfg, result } of results) {
-    const tps   = peakTps(cfg);
+  for (const { cfg, sizing, result } of results) {
+    const tps   = sizing?.peak_tps ?? 0;
     const label = `${cfg.label}: ${cfg.concurrentUsers} users, ${cfg.interactionType}`;
-    const counts = providers.map((p) => col(result.recommendations[p]?.instance_count ?? "?", 6));
+    const counts = providers.map((p) => col(result.recommendations[p]?.instances_needed ?? "?", 6));
     const awsType = result.recommendations.aws?.instance_type ?? "?";
     console.log(`${col(label, 40)} ${col(tps.toLocaleString(), 11)}${counts.join("")}  ${awsType}`);
   }
 
-  // ── Monotonic scaling check ───────────────────────────────────────────────
-  console.log("\n=== SCALING VALIDATION ===\n");
+  // ── Monotonic scaling check (pre-computed, authoritative) ─────────────────
+  console.log("\n=== SCALING VALIDATION (pre-computed) ===\n");
   for (const p of providers) {
-    const counts = results.map(({ result }) => result.recommendations[p]?.instance_count ?? 0);
+    const counts = results.map(({ sizing }) => sizingForProvider(sizing, p)?.instances_needed ?? 0);
     const isMonotonic = counts.every((c, i) => i === 0 || c >= counts[i - 1]);
     const arrow = counts.join(" → ");
     const verdict = isMonotonic ? "✓ monotonically increasing" : "✗ NOT monotonic — review sizing";
     console.log(`${col(p.toUpperCase(), 6)} ${arrow}  ${verdict}`);
   }
 
-  // ── Per-scenario throughput math ──────────────────────────────────────────
-  console.log("\n=== THROUGHPUT ANALYSIS PER SCENARIO ===\n");
-  for (const { cfg, result } of results) {
-    const ta = result.throughput_analysis;
+  // ── Adherence check: does Claude's echoed JSON match the pre-computed values? ──
+  console.log("\n=== PRE-COMPUTATION ADHERENCE CHECK ===\n");
+  let adherenceFailures = 0;
+  for (const { cfg, sizing, result } of results) {
+    for (const p of providers) {
+      const expected = sizingForProvider(sizing, p);
+      const rec = result.recommendations[p];
+      if (!expected || !rec) continue;
+      const instancesMatch = rec.instances_needed === expected.instances_needed;
+      const replicasMatch  = rec.replicas_per_instance === expected.replicas_per_instance;
+      const ok = instancesMatch && replicasMatch;
+      if (!ok) adherenceFailures++;
+      console.log(
+        `${col(`${cfg.label} ${p.toUpperCase()}`, 12)} ` +
+        `instances: ${rec.instances_needed ?? "?"} vs expected ${expected.instances_needed ?? "?"}  ` +
+        `replicas: ${rec.replicas_per_instance ?? "?"} vs expected ${expected.replicas_per_instance ?? "?"}  ` +
+        `${ok ? "✓" : "✗ MISMATCH"}`
+      );
+    }
+  }
+  console.log(adherenceFailures === 0 ? "\n✓ All providers matched pre-computed sizing exactly." : `\n✗ ${adherenceFailures} provider/scenario mismatch(es) — Claude deviated from pre-computed sizing.`);
+
+  // ── Per-scenario throughput math (pre-computed, authoritative) ────────────
+  console.log("\n=== THROUGHPUT ANALYSIS PER SCENARIO (pre-computed) ===\n");
+  for (const { cfg, sizing } of results) {
     console.log(`${cfg.label} (${cfg.concurrentUsers} users × ${interactionLabel(cfg)})`);
-    console.log(`  Required TPS : ${ta?.peak_tps_required?.toLocaleString() ?? "?"}`);
-    console.log(`  TPS/instance : ${ta?.tps_per_instance?.toLocaleString() ?? "?"}`);
-    console.log(`  Sizing       : ${ta?.sizing_rationale ?? "?"}`);
+    console.log(`  GPU tier     : ${sizing?.gpu_tier ?? "?"} (${sizing?.gpu_tier_vram_gb ?? "?"}GB)`);
+    console.log(`  Required TPS : ${sizing?.peak_tps?.toLocaleString() ?? "?"}`);
+    console.log(`  TPS/replica  : ${sizing?.tps_per_replica?.toLocaleString() ?? "?"}`);
+    console.log(`  Replicas/inst: ${sizing?.replicas_per_instance ?? "?"}`);
+    console.log(`  Instances    : ${sizing?.instances_needed ?? "?"}`);
     console.log();
   }
 
-  // ── Fleet cost table ──────────────────────────────────────────────────────
+  // ── Fleet cost table (instances from pre-computed sizing, price from Claude) ──
   console.log("\n=== FLEET COST TABLE ===\n");
   const fmtUSD = (n) => (n == null ? "     N/A" : `$${Number(n).toFixed(2).padStart(8)}`);
   const fHdr = `${col("Scenario", 32)} ${col("Provider", 8)} ${col("Instances", 10)} ${col("$/hr ea", 10)} ${col("Fleet $/hr", 12)} ${"Fleet $/mo"}`;
   console.log(fHdr);
   console.log("─".repeat(fHdr.length));
-  for (const { cfg, result } of results) {
+  for (const { cfg, sizing, result } of results) {
     const label = `${cfg.label}: ${cfg.concurrentUsers}u × ${cfg.interactionType}`;
     for (const p of providers) {
+      const expected = sizingForProvider(sizing, p);
       const rec = result.recommendations[p];
-      const n   = rec?.instances_needed;
+      const n   = expected?.instances_needed;
       const hr  = rec?.hourly_cost_usd;
-      const fhr = rec?.total_fleet_cost_per_hour;
-      const fmo = rec?.total_fleet_cost_per_month;
+      const fhr = (n != null && hr != null) ? n * hr : null;
+      const fmo = fhr != null ? fhr * 730 : null;
       console.log(
         `${col(label, 32)} ${col(p.toUpperCase(), 8)} ${col(n ?? "?", 10)} ` +
         `${fmtUSD(hr)}   ${fmtUSD(fhr)}   ${fmtUSD(fmo)}`
