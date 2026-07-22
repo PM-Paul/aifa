@@ -1450,27 +1450,38 @@ function flattenInputs({ wl, modelspec, scale, latency, concurrentUsers, interac
 // Pinned constants — mirror the numbers SYSTEM_PROMPT's VRAM formula and TPS REFERENCE
 // table used to encode as prose. GPU_TIERS is ordered smallest → largest; tier selection
 // takes the first tier whose VRAM fits this model at that tier's own quantization.
+// TPS values are keyed by model class. The L4/A10G tier uses the A10G reference (its
+// existing 7B/13B values are A10G-based; L4 runs ~15-20% lower per spec but is sized via
+// this same 24GB tier). Classes above ~13B don't fit L4/A10G's 24GB, so they're omitted
+// there. The 34B/72B/405B rows exceed a single 80GB GPU and route to the tensor-parallel
+// override path — their TPS entries are reference values only (405B needs multi-GPU TP).
 const GPU_TIERS = [
-  { key: 'L4/A10G', vram: 24, tpsTable: { 7: 1200, 13: 800 },                      quantization: 'INT8' },
-  { key: 'A100_40',  vram: 40, tpsTable: { 13: 1100, 30: 450, 70: null },          quantization: 'BF16' },
-  { key: 'A100_80',  vram: 80, tpsTable: { 7: 2200, 13: 1300, 30: 600, 70: 450 },  quantization: 'BF16' },
-  { key: 'H100',     vram: 80, tpsTable: { 7: 5000, 13: 3000, 30: 1500, 70: 1200 }, quantization: 'BF16' },
+  { key: 'L4/A10G', vram: 24, tpsTable: { 1: 2000, 3: 1800, 7: 1200, 8: 900, 13: 800 },                                     quantization: 'INT8' },
+  { key: 'A100_40',  vram: 40, tpsTable: { 1: 3500, 3: 3000, 8: 1500, 13: 1100, 30: 450, 34: 400, 70: null },               quantization: 'BF16' },
+  { key: 'A100_80',  vram: 80, tpsTable: { 1: 4000, 3: 3500, 7: 2200, 8: 1800, 13: 1300, 30: 600, 34: 550, 70: 450, 72: 420 }, quantization: 'BF16' },
+  { key: 'H100',     vram: 80, tpsTable: { 1: 8000, 3: 7000, 7: 5000, 8: 4000, 13: 3000, 30: 1500, 34: 1300, 70: 1200, 72: 1100, 405: 300 }, quantization: 'BF16' },
 ];
 const LATENCY_SECONDS = { 'Real-time': 3, 'Near real-time': 10 };
 const VRAM_OVERHEAD = 0.20;
 const MFU = 0.45; // reserved — not yet consumed by the formulas below
 const HEADROOM = 1.20;
-const MODEL_CLASSES = [7, 13, 30, 70];
+const MODEL_CLASSES = [1, 3, 7, 8, 13, 30, 34, 70, 72, 405];
 
 // Map an arbitrary parameter count to the nearest reference class. The TPS table and the
-// VRAM sizing below are only defined at these four classes, so an in-between size (e.g.
-// 40B) is snapped to the closest one rather than falling through to the override path.
-//   0–10B → 7B · 10–20B → 13B · 20–50B → 30B · 50B+ → 70B
+// VRAM sizing below are only defined at these classes, so an in-between size (e.g. 40B)
+// is snapped to the closest one rather than falling through to the override path.
+//   ≤2B→1 · ≤5B→3 · ≤10B→7 · ≤11B→8 · ≤20B→13 · ≤50B→30 · ≤60B→34 · ≤71B→70 · ≤200B→72 · >200B→405
 function pickModelClass(paramsBillions) {
-  if (paramsBillions <= 10) return 7;
-  if (paramsBillions <= 20) return 13;
-  if (paramsBillions <= 50) return 30;
-  return 70;
+  if (paramsBillions <= 2)   return 1;
+  if (paramsBillions <= 5)   return 3;
+  if (paramsBillions <= 10)  return 7;
+  if (paramsBillions <= 11)  return 8;
+  if (paramsBillions <= 20)  return 13;
+  if (paramsBillions <= 50)  return 30;
+  if (paramsBillions <= 60)  return 34;
+  if (paramsBillions <= 71)  return 70;
+  if (paramsBillions <= 200) return 72;
+  return 405;
 }
 
 // Step 1+2: quantFactor and vramPerReplica are per-candidate-tier — training never

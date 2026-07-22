@@ -58,25 +58,33 @@ The model is ${cfg.paramsBillions} billion parameters. No compliance requirement
 // all VRAM/TPS/fleet-sizing math in JavaScript before the API call; this harness
 // mirrors that so it exercises (and benchmarks) what's actually running in production.
 // ---------------------------------------------------------------------------
+// See index.html GPU_TIERS for the reference-value notes (A10G-based L4/A10G tier;
+// 34B/72B/405B are single-GPU-infeasible reference rows).
 const SIZING_GPU_TIERS = [
-  { key: "L4/A10G", vram: 24, tpsTable: { 7: 1200, 13: 800 },                       quantization: "INT8" },
-  { key: "A100_40",  vram: 40, tpsTable: { 13: 1100, 30: 450, 70: null },           quantization: "BF16" },
-  { key: "A100_80",  vram: 80, tpsTable: { 7: 2200, 13: 1300, 30: 600, 70: 450 },   quantization: "BF16" },
-  { key: "H100",     vram: 80, tpsTable: { 7: 5000, 13: 3000, 30: 1500, 70: 1200 }, quantization: "BF16" },
+  { key: "L4/A10G", vram: 24, tpsTable: { 1: 2000, 3: 1800, 7: 1200, 8: 900, 13: 800 },                                     quantization: "INT8" },
+  { key: "A100_40",  vram: 40, tpsTable: { 1: 3500, 3: 3000, 8: 1500, 13: 1100, 30: 450, 34: 400, 70: null },               quantization: "BF16" },
+  { key: "A100_80",  vram: 80, tpsTable: { 1: 4000, 3: 3500, 7: 2200, 8: 1800, 13: 1300, 30: 600, 34: 550, 70: 450, 72: 420 }, quantization: "BF16" },
+  { key: "H100",     vram: 80, tpsTable: { 1: 8000, 3: 7000, 7: 5000, 8: 4000, 13: 3000, 30: 1500, 34: 1300, 70: 1200, 72: 1100, 405: 300 }, quantization: "BF16" },
 ];
 const SIZING_LATENCY_SECONDS = { "Real-time": 3, "Near real-time": 10 };
 const VRAM_OVERHEAD = 0.20;
 const MFU = 0.45; // reserved — not yet consumed by the formulas below
 const HEADROOM = 1.20;
-const SIZING_MODEL_CLASSES = [7, 13, 30, 70];
+const SIZING_MODEL_CLASSES = [1, 3, 7, 8, 13, 30, 34, 70, 72, 405];
 
 // Map an arbitrary parameter count to the nearest reference class (see index.html).
-//   0–10B → 7B · 10–20B → 13B · 20–50B → 30B · 50B+ → 70B
+//   ≤2B→1 · ≤5B→3 · ≤10B→7 · ≤11B→8 · ≤20B→13 · ≤50B→30 · ≤60B→34 · ≤71B→70 · ≤200B→72 · >200B→405
 function pickModelClass(paramsBillions) {
-  if (paramsBillions <= 10) return 7;
-  if (paramsBillions <= 20) return 13;
-  if (paramsBillions <= 50) return 30;
-  return 70;
+  if (paramsBillions <= 2)   return 1;
+  if (paramsBillions <= 5)   return 3;
+  if (paramsBillions <= 10)  return 7;
+  if (paramsBillions <= 11)  return 8;
+  if (paramsBillions <= 20)  return 13;
+  if (paramsBillions <= 50)  return 30;
+  if (paramsBillions <= 60)  return 34;
+  if (paramsBillions <= 71)  return 70;
+  if (paramsBillions <= 200) return 72;
+  return 405;
 }
 
 function sizeForTier(gpu, paramsBillions, workloadType) {
