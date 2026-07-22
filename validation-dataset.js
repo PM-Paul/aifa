@@ -60,9 +60,13 @@ const MFU = 0.45; // reserved — not yet consumed by the formulas below
 const HEADROOM = 1.20;
 const SIZING_MODEL_CLASSES = [7, 13, 30, 70];
 
+// Map an arbitrary parameter count to the nearest reference class (see index.html).
+//   0–10B → 7B · 10–20B → 13B · 20–50B → 30B · 50B+ → 70B
 function pickModelClass(paramsBillions) {
-  for (const c of SIZING_MODEL_CLASSES) if (paramsBillions <= c) return c;
-  return SIZING_MODEL_CLASSES[SIZING_MODEL_CLASSES.length - 1]; // clamp to 70B for anything larger
+  if (paramsBillions <= 10) return 7;
+  if (paramsBillions <= 20) return 13;
+  if (paramsBillions <= 50) return 30;
+  return 70;
 }
 
 function sizeForTier(gpu, paramsBillions, workloadType) {
@@ -144,7 +148,7 @@ function computeSizing({ paramsBillions, workloadType, concurrentUsers, tokensPe
   let selectedIdx = -1, selectedGpu = null, selectedQuantFactor = null, selectedVram = null;
   for (let i = 0; i < SIZING_GPU_TIERS.length; i++) {
     const gpu = SIZING_GPU_TIERS[i];
-    const { quantFactor, vramPerReplica } = sizeForTier(gpu, paramsBillions, workloadType);
+    const { quantFactor, vramPerReplica } = sizeForTier(gpu, modelClass, workloadType);
     if (gpu.vram >= vramPerReplica) {
       selectedIdx = i;
       selectedGpu = gpu;
@@ -183,7 +187,7 @@ function computeSizing({ paramsBillions, workloadType, concurrentUsers, tokensPe
     boundaryFlag = true;
     const nextGpu = SIZING_GPU_TIERS[selectedIdx + 1];
     if (nextGpu) {
-      const { quantFactor: nextQuantFactor, vramPerReplica: nextVram } = sizeForTier(nextGpu, paramsBillions, workloadType);
+      const { quantFactor: nextQuantFactor, vramPerReplica: nextVram } = sizeForTier(nextGpu, modelClass, workloadType);
       const nextReplicas = Math.max(1, Math.floor(nextGpu.vram / nextVram));
       const nextTps = nextGpu.tpsTable[modelClass] ?? null;
       const nextInstances = nextTps != null ? Math.ceil((peakTps / (nextReplicas * nextTps)) * HEADROOM) : null;
@@ -206,7 +210,7 @@ function computeSizing({ paramsBillions, workloadType, concurrentUsers, tokensPe
   let azureSubstitute = null;
   if (workloadType === "Inference" && selectedGpu.vram < 80) {
     const azureGpu = SIZING_GPU_TIERS.find((g) => g.key === "A100_80");
-    const { quantFactor: azQuantFactor, vramPerReplica: azVram } = sizeForTier(azureGpu, paramsBillions, workloadType);
+    const { quantFactor: azQuantFactor, vramPerReplica: azVram } = sizeForTier(azureGpu, modelClass, workloadType);
     const azReplicas = Math.max(1, Math.floor(azureGpu.vram / azVram));
     const azTps = azureGpu.tpsTable[modelClass] ?? null;
     const azInstances = (hasFleetInputs && azTps != null) ? Math.ceil((peakTps / (azReplicas * azTps)) * HEADROOM) : null;
@@ -266,7 +270,7 @@ function formatSizingBlock(sizing) {
 
   const lines = [
     "PRE-COMPUTED SIZING (use these values directly — do not recalculate):",
-    `- Model VRAM required: ${sizing.vram_per_replica_gb}GB (${sizing.model_params_billions}B params × 2 × ${sizing.quant_factor} × 1.20 overhead)`,
+    `- Model VRAM required: ${sizing.vram_per_replica_gb}GB (${sizing.model_class === sizing.model_params_billions ? `${sizing.model_params_billions}B params` : `${sizing.model_params_billions}B params sized to nearest ${sizing.model_class}B class`} × 2 × ${sizing.quant_factor} × 1.20 overhead)`,
     `- Selected GPU tier: ${sizing.gpu_tier} (${sizing.gpu_tier_vram_gb}GB VRAM)`,
     `- Replicas per instance: ${sizing.replicas_per_instance}`,
   ];
