@@ -253,6 +253,83 @@
       flex-shrink: 0;
     }
 
+    /* ── Privacy link + modal ──────────────────────────── */
+    .privacy-link {
+      display: block;
+      margin: 12px auto 0;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-align: center;
+      transition: color 0.14s;
+    }
+
+    .privacy-link:hover { color: var(--text-sec); }
+
+    .privacy-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(5, 12, 20, 0.68);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      animation: fade-in 0.16s ease;
+    }
+
+    .privacy-overlay.open { display: flex; }
+
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+    .privacy-modal {
+      position: relative;
+      width: 100%;
+      max-width: 460px;
+      background: var(--navy-card);
+      border: 1px solid var(--navy-border2);
+      border-radius: 12px;
+      padding: 26px 26px 24px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    }
+
+    .privacy-modal h2 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-pri);
+      margin: 0 0 12px;
+    }
+
+    .privacy-modal p {
+      font-size: 12.5px;
+      line-height: 1.7;
+      color: var(--text-sec);
+      margin: 0;
+    }
+
+    .privacy-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: color 0.14s, background 0.14s;
+    }
+
+    .privacy-close:hover { color: var(--text-pri); background: var(--navy-border); }
+
     .btn-analyze {
       width: 100%;
       padding: 11px 18px;
@@ -1103,6 +1180,7 @@
         <span class="btn-spinner"></span>
         <span id="btn-label">Analyze My Workload</span>
       </button>
+      <button type="button" class="privacy-link" onclick="openPrivacy()">Privacy</button>
     </div>
 
   </aside>
@@ -1142,6 +1220,17 @@
   </main>
 </div>
 
+<!-- ═══════════════ PRIVACY NOTICE (NF-004) ═══════════════ -->
+<div class="privacy-overlay" id="privacy-overlay" onclick="if (event.target === this) closePrivacy()">
+  <div class="privacy-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
+    <button type="button" class="privacy-close" aria-label="Close" onclick="closePrivacy()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <h2 id="privacy-title">Privacy</h2>
+    <p>AIFA collects the following data to improve the product: workload inputs you enter (model size, concurrent users, interaction length, etc.), recommendation results, and optional feedback you submit. Your IP address is used for rate limiting only and is not stored beyond 24 hours. If you provide an email address in the feedback form, it is stored solely for follow-up purposes and is never shared or sold. No cookies are used. No user accounts are created. All data is stored securely and used only for product improvement.</p>
+  </div>
+</div>
+
 <script>
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STEPS = [
@@ -1151,6 +1240,11 @@ const STEPS = [
   'Fetching GCP pricing data',
   'Generating recommendation',
 ];
+
+// ── Privacy notice (NF-004) ─────────────────────────────────────────────────────
+function openPrivacy() { document.getElementById('privacy-overlay').classList.add('open'); }
+function closePrivacy() { document.getElementById('privacy-overlay').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePrivacy(); });
 
 // ── State ─────────────────────────────────────────────────────────────────────
 function showState(id) {
