@@ -63,11 +63,12 @@ const HEADROOM = 1.20;
 const SIZING_MODEL_CLASSES = [1, 3, 7, 8, 13, 30, 34, 70, 72, 405];
 
 // Map an arbitrary parameter count to the nearest reference class (see index.html).
-//   ≤2B→1 · ≤5B→3 · ≤10B→7 · ≤11B→8 · ≤20B→13 · ≤50B→30 · ≤60B→34 · ≤71B→70 · ≤200B→72 · >200B→405
+//   ≤2B→1 · ≤5B→3 · ≤7B→7 · ≤11B→8 · ≤20B→13 · ≤50B→30 · ≤60B→34 · ≤71B→70 · ≤200B→72 · >200B→405
+//   (7B upper bound is ≤7 so an 8B model lands in the 8B class, not the 7B class.)
 function pickModelClass(paramsBillions) {
   if (paramsBillions <= 2)   return 1;
   if (paramsBillions <= 5)   return 3;
-  if (paramsBillions <= 10)  return 7;
+  if (paramsBillions <= 7)   return 7;
   if (paramsBillions <= 11)  return 8;
   if (paramsBillions <= 20)  return 13;
   if (paramsBillions <= 50)  return 30;
