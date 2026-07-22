@@ -1302,6 +1302,32 @@ function buildInputSummary({ wl, modelspec, scale, latency, concurrentUsers, int
   return parts.join(' · ');
 }
 
+// Flattens the structured form state into the primitive fields logged to Google Sheets
+// (via /api/analyze and /api/feedback). Presets resolve to the numeric value used for
+// sizing so the columns stay analyzable; missing inputs become ''.
+function flattenInputs({ wl, modelspec, scale, latency, concurrentUsers, interactionLength }) {
+  let concurrent_users = '';
+  if (concurrentUsers) {
+    concurrent_users = concurrentUsers.type === 'exact'
+      ? concurrentUsers.value
+      : (CONCURRENT_USER_PRESETS[concurrentUsers.key]?.value ?? '');
+  }
+  let interaction_length = '';
+  if (interactionLength) {
+    interaction_length = interactionLength.type === 'exact'
+      ? interactionLength.value
+      : (INTERACTION_LENGTH_PRESETS[interactionLength.value]?.tokens ?? '');
+  }
+  return {
+    workload_type: wl ?? '',
+    model_params_billions: modelspec?.value ?? '',
+    concurrent_users,
+    interaction_length,
+    scale_pattern: scale ?? '',
+    latency: latency ?? '',
+  };
+}
+
 // ── Pre-computed sizing (moves fleet-sizing math from the AI prompt into JS) ───
 // Pinned constants — mirror the numbers SYSTEM_PROMPT's VRAM formula and TPS REFERENCE
 // table used to encode as prose. GPU_TIERS is ordered smallest → largest; tier selection
@@ -1600,9 +1626,9 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
   const el   = document.getElementById('state-results');
   const recs = aiResult.recommendations ?? {};
 
-  // Snapshot this session's workload inputs for the feedback widget, and reset any
+  // Snapshot this session's id + workload inputs for the feedback widget, and reset any
   // thumb selection carried over from a previous analysis.
-  _feedbackSession = formData;
+  _feedbackSession = { sessionId: _sessionId, inputs: formData ? flattenInputs(formData) : null };
   _feedbackThumb   = null;
   const providers = [
     { id: 'aws',   label: 'AWS',   rec: recs.aws,   price: awsPrice,   equivPrice: equivPrices.aws   ?? null },
@@ -1744,6 +1770,7 @@ function renderResults(aiResult, awsPrice, azurePrice, gcpPrice, equivPrices = {
 // alongside the thumbs/comment/email. Set on every renderResults() call.
 let _feedbackSession = null;
 let _feedbackThumb   = null;
+let _sessionId       = null;
 
 function feedbackWidgetHtml() {
   return `
@@ -1780,7 +1807,8 @@ async function submitFeedback() {
     thumbs:  _feedbackThumb,
     comment: document.getElementById('fb-comment').value.trim(),
     email:   document.getElementById('fb-email').value.trim(),
-    workload: _feedbackSession,
+    sessionId: _feedbackSession?.sessionId ?? null,
+    inputs:    _feedbackSession?.inputs ?? null,
   };
   try {
     await fetch('/api/feedback', {
@@ -1827,6 +1855,7 @@ const STEP_TIMER_DELAYS_MS = [8000, 16000, 24000];
 
 async function runAnalysis() {
   _step = -1;
+  _sessionId = crypto.randomUUID(); // correlates this analysis with any feedback submitted for it
   const formData = collectForm();
   const workload     = buildWorkloadDescription(formData);
   const sizing       = computeSizing(formData);
@@ -1842,7 +1871,7 @@ async function runAnalysis() {
     const res = await fetch('/api/analyze', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ workload, sizingBlock, workloadType: formData.wl }),
+      body: JSON.stringify({ workload, sizingBlock, workloadType: formData.wl, sessionId: _sessionId, inputs: flattenInputs(formData) }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

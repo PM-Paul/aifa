@@ -4,6 +4,8 @@
     "@anthropic-ai/sdk": "^0.106.0",
     "@aws-sdk/client-pricing": "^3.1092.0",
     "@upstash/redis": "^1.38.0",
-    "dotenv": "^17.4.2"
+    "@vercel/functions": "^3.7.5",
+    "dotenv": "^17.4.2",
+    "googleapis": "^173.0.0"
   }
 }

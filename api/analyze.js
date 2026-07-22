@@ -6,6 +6,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { PricingClient, GetProductsCommand } from '@aws-sdk/client-pricing';
 import { Redis } from '@upstash/redis';
+import { waitUntil } from '@vercel/functions';
+import { logAssessment } from '../lib/sheets.js';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -189,6 +191,15 @@ function buildUserPrompt(workload, sizingBlock, correction = '') {
   ].join('\n');
 }
 
+function addUsage(a, b) {
+  return {
+    input_tokens:  (a.input_tokens ?? 0)  + (b.input_tokens ?? 0),
+    output_tokens: (a.output_tokens ?? 0) + (b.output_tokens ?? 0),
+  };
+}
+
+// Returns { result, usage } — usage accumulates token counts across any internal retry
+// (e.g. a max_tokens truncation) so the caller sees the true API cost of this call.
 async function callAnthropic(workload, sizingBlock, maxTokens = 16000, correction = '') {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -196,17 +207,22 @@ async function callAnthropic(workload, sizingBlock, maxTokens = 16000, correctio
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: buildUserPrompt(workload, sizingBlock, correction) }],
   });
+  const usage = {
+    input_tokens:  response.usage?.input_tokens  ?? 0,
+    output_tokens: response.usage?.output_tokens ?? 0,
+  };
   const textBlock = response.content.find(b => b.type === 'text');
   if (!textBlock) throw new Error('No text block in Anthropic response');
   const raw = textBlock.text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
   try {
-    return JSON.parse(raw);
+    return { result: JSON.parse(raw), usage };
   } catch (parseErr) {
     // Response was cut off mid-JSON because it hit the token ceiling — retry once
     // with double the budget rather than surfacing a confusing parse error.
     if (response.stop_reason === 'max_tokens' && maxTokens < 32000) {
       console.warn(`[AIFA] Response truncated at max_tokens=${maxTokens} — retrying with ${maxTokens * 2}`);
-      return callAnthropic(workload, sizingBlock, maxTokens * 2, correction);
+      const retry = await callAnthropic(workload, sizingBlock, maxTokens * 2, correction);
+      return { result: retry.result, usage: addUsage(usage, retry.usage) };
     }
     throw parseErr;
   }
@@ -235,12 +251,14 @@ function detectBlockedSku(aiResult, workloadType) {
 }
 
 async function getAiRecommendation(workload, sizingBlock, workloadType) {
-  let aiResult = await callAnthropic(workload, sizingBlock);
-  let reasons  = detectBlockedSku(aiResult, workloadType);
+  let { result: aiResult, usage } = await callAnthropic(workload, sizingBlock);
+  let reasons = detectBlockedSku(aiResult, workloadType);
 
   if (reasons.length) {
     console.warn('[AIFA] Blocked SKU detected in AI recommendation — retrying silently.', reasons);
-    aiResult = await callAnthropic(workload, sizingBlock, 16000, BLOCKED_SKU_CORRECTION);
+    const retry = await callAnthropic(workload, sizingBlock, 16000, BLOCKED_SKU_CORRECTION);
+    aiResult = retry.result;
+    usage    = addUsage(usage, retry.usage);
     reasons  = detectBlockedSku(aiResult, workloadType);
     if (reasons.length) {
       console.error('[AIFA] Blocked SKU still present after retry — giving up.', reasons);
@@ -249,7 +267,7 @@ async function getAiRecommendation(workload, sizingBlock, workloadType) {
     console.log('[AIFA] Retry resolved the blocked SKU(s).');
   }
 
-  return aiResult;
+  return { aiResult, usage };
 }
 
 // ── AWS Pricing ────────────────────────────────────────────────────────────────
@@ -466,6 +484,68 @@ function lookupGcpPrice(componentPrices, instanceType) {
   return { hourlyUSD: Math.round((spec.gpus * gp + spec.vcpu * cp + spec.ramGb * rp) * 1000) / 1000 };
 }
 
+// ── Assessment logging ───────────────────────────────────────────────────────────
+// Effective per-provider cost used for the winner comparison: fleet cost when a fleet
+// size is known, otherwise single-instance hourly. Null when no price is available.
+function providerCompareCost(rec, price) {
+  const hourly = price?.hourlyUSD;
+  if (hourly == null) return null;
+  const n = rec?.instances_needed ?? null;
+  return n ? n * hourly : hourly;
+}
+
+// Fleet cost per hour = (instances_needed || 1) × hourly, matching the frontend's card
+// math. Empty string when no price is available (so the cell renders blank).
+function fleetCostHr(rec, price) {
+  const hourly = price?.hourlyUSD;
+  if (hourly == null) return '';
+  const n = rec?.instances_needed ?? 1;
+  return Math.round(n * hourly * 1000) / 1000;
+}
+
+function buildAssessmentRow({ sessionId, inputs, aiResult, usage, prices, responseTimeMs }) {
+  const recs = aiResult.recommendations ?? {};
+  const providers = [
+    { id: 'aws',   rec: recs.aws,   price: prices.aws   },
+    { id: 'azure', rec: recs.azure, price: prices.azure },
+    { id: 'gcp',   rec: recs.gcp,   price: prices.gcp   },
+  ];
+  let lowest = '', lowestCost = Infinity;
+  for (const p of providers) {
+    const c = providerCompareCost(p.rec, p.price);
+    if (c != null && c < lowestCost) { lowestCost = c; lowest = p.id; }
+  }
+
+  return {
+    timestamp: new Date().toISOString(),
+    session_id: sessionId ?? '',
+    workload_type:         inputs.workload_type ?? '',
+    model_params_billions: inputs.model_params_billions ?? '',
+    concurrent_users:      inputs.concurrent_users ?? '',
+    interaction_length:    inputs.interaction_length ?? '',
+    scale_pattern:         inputs.scale_pattern ?? '',
+    latency:               inputs.latency ?? '',
+    gpu_tier_selected: aiResult.gpu_tier ?? '',
+    aws_instance:          cleanInstanceType(recs.aws?.instance_type ?? ''),
+    aws_fleet_cost_hr:     fleetCostHr(recs.aws, prices.aws),
+    aws_instances_needed:  recs.aws?.instances_needed ?? '',
+    aws_confidence:        recs.aws?.confidence ?? '',
+    azure_instance:        cleanInstanceType(recs.azure?.instance_type ?? ''),
+    azure_fleet_cost_hr:   fleetCostHr(recs.azure, prices.azure),
+    azure_instances_needed: recs.azure?.instances_needed ?? '',
+    azure_confidence:      recs.azure?.confidence ?? '',
+    gcp_instance:          cleanInstanceType(recs.gcp?.instance_type ?? ''),
+    gcp_fleet_cost_hr:     fleetCostHr(recs.gcp, prices.gcp),
+    gcp_instances_needed:  recs.gcp?.instances_needed ?? '',
+    gcp_confidence:        recs.gcp?.confidence ?? '',
+    lowest_cost_provider: lowest,
+    input_tokens:  usage.input_tokens ?? 0,
+    output_tokens: usage.output_tokens ?? 0,
+    total_tokens:  (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
+    response_time_ms: responseTimeMs,
+  };
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -483,14 +563,15 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { workload, sizingBlock, workloadType } = req.body ?? {};
+  const { workload, sizingBlock, workloadType, sessionId, inputs = {} } = req.body ?? {};
   if (!workload || !sizingBlock) {
     res.status(400).json({ error: 'Missing workload or sizingBlock' });
     return;
   }
 
+  const startTime = Date.now();
   try {
-    const aiResult = await getAiRecommendation(workload, sizingBlock, workloadType);
+    const { aiResult, usage } = await getAiRecommendation(workload, sizingBlock, workloadType);
 
     const awsInstance      = cleanInstanceType(aiResult.recommendations?.aws?.instance_type ?? '');
     const azureInstance    = cleanInstanceType(aiResult.recommendations?.azure?.instance_type ?? '');
@@ -513,11 +594,26 @@ export default async function handler(req, res) {
       gcp:   gcpEquivInstance ? lookupGcpPrice(gcpComponentPrices, gcpEquivInstance) : null,
     };
 
+    const responseTimeMs = Date.now() - startTime;
+
     res.status(200).json({
       aiResult,
       pricing: { aws: awsPrice, azure: azurePrice, gcp: gcpPrice },
       equivPricing,
     });
+
+    // Log the assessment to Google Sheets without blocking the response. waitUntil keeps
+    // the serverless invocation alive until the append settles — a plain fire-and-forget
+    // promise is not guaranteed to run once the handler returns (the lambda freezes).
+    const row = buildAssessmentRow({
+      sessionId,
+      inputs: { ...inputs, workload_type: inputs.workload_type ?? workloadType ?? '' },
+      aiResult,
+      usage,
+      prices: { aws: awsPrice, azure: azurePrice, gcp: gcpPrice },
+      responseTimeMs,
+    });
+    waitUntil(logAssessment(row).catch(err => console.error('[AIFA] Assessment logging failed:', err.message)));
   } catch (err) {
     console.error('[AIFA] /api/analyze failed:', err);
     res.status(502).json({ error: err.message ?? 'Analysis failed' });
