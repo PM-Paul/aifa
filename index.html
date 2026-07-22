@@ -39,16 +39,35 @@
       -webkit-font-smoothing: antialiased;
     }
 
+    /* Body is a flex column so the two-panel app fills the space above a slim,
+       always-visible page footer. */
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
     /* ── App shell ─────────────────────────────────────── */
     .app {
       display: flex;
-      height: 100vh;
+      flex: 1;
+      min-height: 0;
     }
 
     /* ── Panels ────────────────────────────────────────── */
     .panel {
       overflow-y: auto;
-      height: 100vh;
+      height: 100%;
+    }
+
+    /* ── Page footer ───────────────────────────────────── */
+    .site-footer {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 20px;
+      background: var(--navy-panel);
+      border-top: 1px solid var(--navy-border);
     }
 
     .panel-intake {
@@ -256,7 +275,7 @@
     /* ── Privacy link + modal ──────────────────────────── */
     .privacy-link {
       display: block;
-      margin: 12px auto 0;
+      margin: 0;
       background: none;
       border: none;
       padding: 0;
@@ -1044,7 +1063,8 @@
 
     /* ── Responsive ─────────────────────────────────────── */
     @media (max-width: 860px) {
-      .app { flex-direction: column; height: auto; overflow: auto; }
+      body { display: block; height: auto; }
+      .app { flex-direction: column; height: auto; min-height: 0; overflow: auto; }
       .panel, .panel-intake, .panel-results { height: auto; overflow: visible; }
       .panel-intake { width: 100%; }
       .panel-results { min-height: 60vh; }
@@ -1180,7 +1200,6 @@
         <span class="btn-spinner"></span>
         <span id="btn-label">Analyze My Workload</span>
       </button>
-      <button type="button" class="privacy-link" onclick="openPrivacy()">Privacy</button>
     </div>
 
   </aside>
@@ -1219,6 +1238,11 @@
 
   </main>
 </div>
+
+<!-- ═══════════════ PAGE FOOTER ═══════════════ -->
+<footer class="site-footer">
+  <button type="button" class="privacy-link" onclick="openPrivacy()">Privacy</button>
+</footer>
 
 <!-- ═══════════════ PRIVACY NOTICE (NF-004) ═══════════════ -->
 <div class="privacy-overlay" id="privacy-overlay" onclick="if (event.target === this) closePrivacy()">
