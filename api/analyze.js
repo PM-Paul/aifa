@@ -553,14 +553,23 @@ export default async function handler(req, res) {
     return;
   }
 
-  const clientIp = getClientIp(req);
-  const withinLimit = await checkRateLimit(clientIp);
-  if (!withinLimit) {
-    res.status(429).json({
-      error: 'Daily limit reached',
-      message: 'You have reached the limit of 10 free assessments per day. Please try again tomorrow.',
-    });
-    return;
+  // Developer bypass: a request whose X-AIFA-Dev header matches AIFA_DEV_TOKEN skips the
+  // rate limit entirely (for testing/demos). Guarded with Boolean(devToken) so an unset
+  // token can never accidentally enable the bypass (undefined === undefined).
+  const devToken = process.env.AIFA_DEV_TOKEN;
+  const devBypass = Boolean(devToken) && req.headers['x-aifa-dev'] === devToken;
+  if (devBypass) console.log('[AIFA] Rate limit bypassed via X-AIFA-Dev header.');
+
+  if (!devBypass) {
+    const clientIp = getClientIp(req);
+    const withinLimit = await checkRateLimit(clientIp);
+    if (!withinLimit) {
+      res.status(429).json({
+        error: 'Rate limit reached',
+        message: "You've reached today's limit. AIFA offers 10 free assessments per 24-hour period. Please try again in 24 hours.",
+      });
+      return;
+    }
   }
 
   const { workload, sizingBlock, workloadType, sessionId, inputs = {} } = req.body ?? {};

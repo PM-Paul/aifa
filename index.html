@@ -1981,7 +1981,7 @@ function toggleRationale(linkEl) {
 }
 
 // ── Error display ──────────────────────────────────────────────────────────────
-function showError(msg) {
+function showError(msg, title = 'Analysis failed') {
   const el = document.getElementById('state-results');
   el.innerHTML = `
     <div class="results-top-bar">
@@ -1991,7 +1991,7 @@ function showError(msg) {
       <div style="width:52px;height:52px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.25);border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       </div>
-      <div style="font-size:15px;font-weight:600;color:var(--text-sec);">Analysis failed</div>
+      <div style="font-size:15px;font-weight:600;color:var(--text-sec);">${esc(title)}</div>
       <div style="font-size:13px;color:var(--text-muted);max-width:360px;line-height:1.65;">${esc(msg)}</div>
     </div>`;
   showState('state-results');
@@ -2025,6 +2025,11 @@ async function runAnalysis() {
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        // Rate limited — show the friendly message with a non-"failed" heading.
+        showError(err.message ?? "You've reached today's limit. AIFA offers 10 free assessments per 24-hour period. Please try again in 24 hours.", 'Daily limit reached');
+        return;
+      }
       throw new Error(err.error ?? `Analysis failed (HTTP ${res.status})`);
     }
     payload = await res.json();
