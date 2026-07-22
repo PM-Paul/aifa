@@ -120,6 +120,14 @@ function selectInstance(tier, replicas, workloadType, provider) {
   }
 
   if (provider === "gcp") {
+    // FR-093: A100/H100-tier training requires multi-GPU NVLink — force the 8-GPU SKU,
+    // never the single-GPU inference instances below. (L4/A10G-tier training fits a
+    // single GPU and needs no NVLink, so it falls through to the shared g2 logic.)
+    if (workloadType === "Training") {
+      if (tier === "A100_40") return { sku: "a2-highgpu-8g", gpuDescription: "8×NVIDIA A100 40GB", nvlinkRequired: true };
+      if (tier === "A100_80") return { sku: "a2-ultragpu-8g", gpuDescription: "8×NVIDIA A100 80GB", nvlinkRequired: true };
+      if (tier === "H100")    return { sku: "a3-highgpu-8g", gpuDescription: "8×NVIDIA H100 80GB", nvlinkRequired: true };
+    }
     if (tier === "L4/A10G") {
       if (replicas >= 4) return { sku: "g2-standard-48", gpuDescription: "4×NVIDIA L4 24GB", nvlinkRequired: false };
       if (replicas >= 2) return { sku: "g2-standard-24", gpuDescription: "2×NVIDIA L4 24GB", nvlinkRequired: false };

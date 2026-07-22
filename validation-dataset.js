@@ -110,6 +110,14 @@ function selectInstance(tier, replicas, workloadType, provider) {
   }
 
   if (provider === "gcp") {
+    // FR-093: A100/H100-tier training requires multi-GPU NVLink — force the 8-GPU SKU,
+    // never the single-GPU inference instances below. (L4/A10G-tier training fits a
+    // single GPU and needs no NVLink, so it falls through to the shared g2 logic.)
+    if (workloadType === "Training") {
+      if (tier === "A100_40") return { sku: "a2-highgpu-8g", gpuDescription: "8×NVIDIA A100 40GB", nvlinkRequired: true };
+      if (tier === "A100_80") return { sku: "a2-ultragpu-8g", gpuDescription: "8×NVIDIA A100 80GB", nvlinkRequired: true };
+      if (tier === "H100")    return { sku: "a3-highgpu-8g", gpuDescription: "8×NVIDIA H100 80GB", nvlinkRequired: true };
+    }
     if (tier === "L4/A10G") {
       if (replicas >= 4) return { sku: "g2-standard-48", gpuDescription: "4×NVIDIA L4 24GB", nvlinkRequired: false };
       if (replicas >= 2) return { sku: "g2-standard-24", gpuDescription: "2×NVIDIA L4 24GB", nvlinkRequired: false };
@@ -713,10 +721,19 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("AIFA — DR-007 Regression Validation Suite\n");
-  console.log(`Running ${TEST_CASES.length} test cases against claude-sonnet-4-6...\n`);
+  // Optional single-case filter: `TC_ONLY=TC-003 node validation-dataset.js`.
+  // When unset, the full suite runs exactly as before.
+  const only = process.env.TC_ONLY;
+  const cases = only ? TEST_CASES.filter((tc) => tc.id === only) : TEST_CASES;
+  if (only && cases.length === 0) {
+    console.error(`No test case with id "${only}" found.`);
+    process.exit(1);
+  }
 
-  const results = await Promise.allSettled(TEST_CASES.map(runTestCase));
+  console.log("AIFA — DR-007 Regression Validation Suite\n");
+  console.log(`Running ${cases.length} test case${cases.length === 1 ? "" : "s"} against claude-sonnet-4-6...\n`);
+
+  const results = await Promise.allSettled(cases.map(runTestCase));
   const settled = results.map((r) => r.value ?? r.reason);
 
   console.log("=== RESULTS ===\n");
