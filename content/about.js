@@ -40,7 +40,7 @@ export const about = {
     },
     {
       step: '04',
-      title: "What's next (planned)",
+      title: "What's next",
       body: "Next is the step I skipped to build fast: talking to the architects who'd actually use this. I've written a structured discovery plan, including interview rules designed to avoid biasing the findings with my own prototype, to test whether this problem is real, frequent, and painful enough for anyone to want it solved.",
       doc: 'discovery-validation-plan',
       status: 'planned',
