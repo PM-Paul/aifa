@@ -4,7 +4,7 @@
 
 Paul Moore   |   Aug 2026   |   v1.1
 
-| Document Status No customer discovery has been conducted. This document defines the research required to test the assumptions behind the AI Factory Advisor MVP. It contains no findings and no validated conclusions. Every statement about user behavior below is a hypothesis to be tested, not an observation. |
+| Document Status: No customer discovery has been conducted. This document defines the research required to test the assumptions behind the AI Factory Advisor MVP. It contains no findings and no validated conclusions. Every statement about user behavior below is a hypothesis to be tested, not an observation. |
 | :---- |
 
 # **1\. Purpose & Context**

@@ -4,7 +4,7 @@ Product Brief
 
 Paul Moore  |  July 2026  |  v1.0
 
-| Document Status This brief describes the AI Factory Advisor MVP as currently built and deployed. It documents what the product does today and the reasoning behind its scope. It is not a validated product. No customer discovery has been completed, and the assumptions identified at the end of this document remain untested. |
+| Document Status: This brief describes the AI Factory Advisor MVP as currently built and deployed. It documents what the product does today and the reasoning behind its scope. It is not a validated product. No customer discovery has been completed, and the assumptions identified at the end of this document remain untested. |
 | :---- |
 
 # **1\. Product Overview**

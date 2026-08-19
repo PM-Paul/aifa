@@ -91,13 +91,13 @@ code, pre {
   font-size: 15px;
   color: var(--text-sec);
   max-width: 60ch;
+  margin-top: -6px;
 }
 
 .about-bio {
   font-size: 13.5px;
   line-height: 1.7;
   color: var(--text-sec);
-  max-width: 62ch;
 }
 
 .about-links {
@@ -152,9 +152,11 @@ code, pre {
 .about-cta:hover { background: var(--teal-hover); }
 
 .about-exec-link {
-  font-size: 12.5px;
-  color: var(--text-sec);
-  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--teal-light);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .about-exec-link:hover { color: var(--text-pri); }
@@ -175,7 +177,6 @@ code, pre {
 .about-section-intro {
   font-size: 13.5px;
   color: var(--text-sec);
-  max-width: 65ch;
   margin-bottom: 28px;
 }
 
@@ -345,8 +346,6 @@ code, pre {
 .doc-download:hover { border-color: var(--teal); }
 
 .doc-article {
-  max-width: 72ch;
-  margin: 0 auto;
   font-size: 14.5px;
   line-height: 1.75;
   color: var(--text-pri);
@@ -394,6 +393,12 @@ code, pre {
   background: var(--navy-card);
 }
 
+/* Single-column header rows are used as callout boxes (e.g. "Document Status"),
+   not real table headers — don't bold those. */
+.doc-article th:only-child {
+  font-weight: normal;
+}
+
 .doc-article code {
   background: var(--navy-card);
   border-radius: 4px;
@@ -413,6 +418,12 @@ code, pre {
 .doc-article pre code {
   background: none;
   padding: 0;
+}
+
+.doc-footer-back {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--navy-border);
 }
 
 /* ── Responsive ────────────────────────────────────── */

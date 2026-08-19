@@ -194,6 +194,7 @@ async function renderDocPage(doc, minutes) {
     <article class="doc-article">
 ${articleHtml}
     </article>
+    <p class="doc-footer-back"><a class="doc-back" href="/about">← Back to About</a></p>
   </div>
   <!-- reading time: ~${minutes} min -->
 </body>
