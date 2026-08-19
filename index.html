@@ -65,10 +65,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 8px;
       padding: 9px 20px;
       background: var(--navy-panel);
       border-top: 1px solid var(--navy-border);
     }
+
+    .footer-sep { font-size: 11px; color: var(--text-muted); }
 
     .panel-intake {
       width: 360px;
@@ -1241,6 +1244,8 @@
 
 <!-- ═══════════════ PAGE FOOTER ═══════════════ -->
 <footer class="site-footer">
+  <a href="/about" class="privacy-link">About</a>
+  <span class="footer-sep">·</span>
   <button type="button" class="privacy-link" onclick="openPrivacy()">Privacy</button>
 </footer>
 

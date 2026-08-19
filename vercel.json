@@ -1,4 +1,6 @@
 {
+  "buildCommand": "npm run build",
+  "cleanUrls": true,
   "functions": {
     "api/analyze.js": { "maxDuration": 60 }
   },
