@@ -1,0 +1,436 @@
+/* Shared theme for /about and /about/docs/* — variables and base rules mirror
+   index.html's inline <style> so these pages match the main app. */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy:         #0D1B2A;
+  --navy-panel:   #0F2030;
+  --navy-card:    #122639;
+  --navy-deep:    #0A1520;
+  --navy-border:  #1E3A50;
+  --navy-border2: #254A62;
+  --teal:         #0D9488;
+  --teal-hover:   #0B7B71;
+  --teal-light:   #2DD4BF;
+  --teal-dim:     rgba(13, 148, 136, 0.13);
+  --teal-glow:    rgba(13, 148, 136, 0.25);
+  --text-pri:     #F1F5F9;
+  --text-sec:     #8BA4BA;
+  --text-muted:   #4A6480;
+  --amber:        #F59E0B;
+}
+
+html, body {
+  min-height: 100%;
+  background: var(--navy);
+  color: var(--text-pri);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--teal-light);
+  outline-offset: 2px;
+}
+
+code, pre {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ── Page shell ────────────────────────────────────── */
+.about-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+}
+
+.about-topbar {
+  padding: 20px 0;
+}
+
+.about-topbar a {
+  font-size: 12.5px;
+  color: var(--text-sec);
+  text-decoration: none;
+  transition: color 0.14s;
+}
+
+.about-topbar a:hover { color: var(--text-pri); }
+
+/* ── Header ────────────────────────────────────────── */
+.about-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 16px 0 48px;
+}
+
+.about-headshot {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--navy-border2);
+}
+
+.about-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.about-headline {
+  font-size: 15px;
+  color: var(--text-sec);
+  max-width: 60ch;
+  margin-top: -6px;
+}
+
+.about-bio {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--text-sec);
+}
+
+.about-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.about-link-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border: 1px solid var(--navy-border2);
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-sec);
+  text-decoration: none;
+  transition: color 0.14s, border-color 0.14s;
+}
+
+.about-link-chip:hover {
+  color: var(--text-pri);
+  border-color: var(--teal);
+}
+
+.about-cta-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.about-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 22px;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition: background 0.14s;
+}
+
+.about-cta:hover { background: var(--teal-hover); }
+
+.about-exec-link {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--teal-light);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.about-exec-link:hover { color: var(--text-pri); }
+
+/* ── Section headings ──────────────────────────────── */
+.about-section {
+  padding: 40px 0;
+  border-top: 1px solid var(--navy-border);
+}
+
+.about-section h2 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.about-section-intro {
+  font-size: 13.5px;
+  color: var(--text-sec);
+  margin-bottom: 28px;
+}
+
+/* ── Story ─────────────────────────────────────────── */
+.story-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.story-step {
+  background: var(--navy-card);
+  border: 1px solid var(--navy-border2);
+  border-radius: 12px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.story-step.is-planned {
+  border-style: dashed;
+}
+
+.story-step-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--teal-light);
+  font-weight: 600;
+}
+
+.story-step h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.story-step p {
+  font-size: 12.5px;
+  color: var(--text-sec);
+  flex: 1;
+}
+
+.story-badge-planned {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.story-step a {
+  font-size: 12.5px;
+  color: var(--teal-light);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.story-step a:hover { text-decoration: underline; }
+
+/* ── How I built this ─────────────────────────────── */
+.built-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.built-block h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.built-block p {
+  font-size: 12.5px;
+  color: var(--text-sec);
+}
+
+/* ── Contact footer ────────────────────────────────── */
+.about-contact {
+  text-align: center;
+  padding: 40px 0 8px;
+}
+
+.about-contact h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.about-contact-links {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.about-contact-links a {
+  color: var(--teal-light);
+  text-decoration: none;
+}
+
+.about-contact-links a:hover { text-decoration: underline; }
+
+.about-back {
+  margin-top: 20px;
+  font-size: 12.5px;
+}
+
+.about-back a {
+  color: var(--text-sec);
+  text-decoration: none;
+}
+
+.about-back a:hover { color: var(--text-pri); }
+
+/* ── Document article ──────────────────────────────── */
+.doc-header {
+  padding: 24px 0 20px;
+  border-bottom: 1px solid var(--navy-border);
+  margin-bottom: 32px;
+}
+
+.doc-back {
+  font-size: 12.5px;
+  color: var(--text-sec);
+  text-decoration: none;
+}
+
+.doc-back:hover { color: var(--text-pri); }
+
+.doc-header h1 {
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-top: 10px;
+}
+
+.doc-badge-planned {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  padding: 3px 8px;
+}
+
+.doc-download {
+  display: inline-flex;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--teal-light);
+  text-decoration: none;
+  border: 1px solid var(--navy-border2);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+
+.doc-download:hover { border-color: var(--teal); }
+
+.doc-article {
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--text-sec);
+}
+
+.doc-article h1,
+.doc-article h2,
+.doc-article h3 {
+  color: var(--text-pri);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 32px 0 12px;
+}
+
+.doc-article h1 { font-size: 19px; }
+.doc-article h2 { font-size: 16.5px; }
+.doc-article h3 { font-size: 14.5px; }
+
+.doc-article p { margin: 0 0 16px; }
+
+.doc-article ul,
+.doc-article ol {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+
+.doc-article li { margin-bottom: 6px; }
+
+.doc-article a { color: var(--teal-light); }
+
+.doc-article table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+
+.doc-article th,
+.doc-article td {
+  border: 1px solid var(--navy-border2);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.doc-article th {
+  background: var(--navy-card);
+}
+
+/* Single-column header rows are used as callout boxes (e.g. "Document Status"),
+   not real table headers — don't bold those. */
+.doc-article th:only-child {
+  font-weight: normal;
+}
+
+.doc-article code {
+  background: var(--navy-card);
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: 12.5px;
+}
+
+.doc-article pre {
+  background: var(--navy-card);
+  border: 1px solid var(--navy-border2);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+
+.doc-article pre code {
+  background: none;
+  padding: 0;
+}
+
+.doc-footer-back {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--navy-border);
+}
+
+/* ── Responsive ────────────────────────────────────── */
+@media (max-width: 720px) {
+  .story-grid,
+  .built-grid {
+    grid-template-columns: 1fr;
+  }
+}
