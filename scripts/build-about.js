@@ -35,6 +35,11 @@ const FONT_LINKS = `
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/public/about-theme.css" />`;
 
+// Vercel Web Analytics — requires "Web Analytics" enabled in the Vercel
+// project dashboard; the script is then served by Vercel automatically.
+const ANALYTICS_SCRIPT = `
+  <script defer src="/_vercel/insights/script.js"></script>`;
+
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -105,7 +110,7 @@ function renderAboutPage(readingMinutesBySlug) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(title)}</title>${metaTags({ title, description: about.headline, path: '/about' })}${FONT_LINKS}
+  <title>${escapeHtml(title)}</title>${metaTags({ title, description: about.headline, path: '/about' })}${FONT_LINKS}${ANALYTICS_SCRIPT}
 </head>
 <body>
   <div class="about-page">
@@ -181,7 +186,7 @@ async function renderDocPage(doc, minutes) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(title)}</title>${metaTags({ title, description: doc.description, path: `/about/docs/${doc.slug}` })}${FONT_LINKS}
+  <title>${escapeHtml(title)}</title>${metaTags({ title, description: doc.description, path: `/about/docs/${doc.slug}` })}${FONT_LINKS}${ANALYTICS_SCRIPT}
 </head>
 <body>
   <div class="about-page">
