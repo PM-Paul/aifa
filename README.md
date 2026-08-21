@@ -7,7 +7,7 @@ A working AI-powered tool that translates plain-language AI workload description
 
 ## What This Project Demonstrates
 
-- **AI product management** — problem statement, personas, requirements, roadmap, and iterative prototype validation documented throughout development
+- **AI product management** — Product Vision and Strategy, Product Brief, and Problem Discovery and Validation Plan documented throughout development
 - **Working AI prototype** — live Anthropic API integration with GPU configuration reasoning, throughput-based fleet sizing, and GPU-optimal quantization
 - **Live pricing integrations** — real-time cost data from AWS Price List Query API, Azure Retail Pricing API, and GCP Cloud Billing API
 - **Engineering rigor** — 7-case regression test suite, pinned reference values for consistent recommendations, explicit VRAM and throughput math
@@ -46,7 +46,7 @@ To also preview the `/about` page locally, run `npm run build` first (regenerate
 - Live Demo: https://aifa-rho.vercel.app/
 - ✅ Stage 0 core validation complete — AI engine produces consistent, throughput-based fleet cost comparisons across AWS, Azure, and GCP
 - 🔨 v1 in progress — core cost comparison working, additional engine refinements and UI features under active development
-- 📋 Full requirements, roadmap, and PM artifacts: see [/about](https://aifa-rho.vercel.app/about)
+- 📋 Product Vision and Strategy, Product Brief, and Problem Discovery and Validation Plan artifacts: see [/about](https://aifa-rho.vercel.app/about)
 
 ## About
 
