@@ -17,7 +17,7 @@ export const about = {
 
   ctaLabel: 'Try the app',
 
-  storyIntro: "My hypothesis, based on my own experience and research, is that architects who recommend cloud infrastructure to clients size AI workloads by hand today: manually researching model specs, GPU capabilities, and pricing across AWS, Azure, and Google Cloud, in a process that's slow and hard to standardize. AI Factory Advisor is a working prototype that tests that hypothesis: it takes workload inputs and recommends GPU instances, with pricing for the fleet and an explanation of how it got there, and it does it all in just a few minutes.",
+  storyIntro: "My hypothesis, based on my own experience and research, is that practitioners who size AI infrastructure for a workload do it by hand today: manually researching model specs, GPU capabilities, and pricing across AWS, Azure, and Google Cloud, in a process that's slow and hard to standardize. AI Factory Advisor is a working prototype that tests that hypothesis: it takes workload inputs and recommends GPU instances, with pricing for the fleet and an explanation of how it got there, and it does it all in just a few minutes.",
 
   story: [
     {
@@ -58,7 +58,7 @@ export const about = {
     },
     {
       title: 'Tradeoffs',
-      body: "I chose advisors, not enterprise IT buyers, as the primary customer, because a one-time buyer has little repeat-use value while advisors run this comparison for every client engagement. I chose a narrow MVP, one decision (GPU sizing for self-managed workloads), over a broader tool, because a narrow scope could be tested against expert judgment while a broader one would just embed more untested assumptions. And I cut features like saved assessments and accounts that weren't validated or realistically buildable solo, on the principle that shipping something credible mattered more than shipping something complete.",
+      body: "I built for client-facing advisors first, not internal IT teams, on the assumption that a one-time buyer has little repeat-use value while advisors run this comparison for every client engagement. I'm now testing that assumption. I chose a narrow MVP, one decision (GPU sizing for self-managed workloads), over a broader tool, because a narrow scope could be tested against expert judgment while a broader one would just embed more untested assumptions. And I cut features like saved assessments and accounts that weren't validated or realistically buildable solo, on the principle that shipping something credible mattered more than shipping something complete.",
     },
     {
       title: "What I'd do differently",
