@@ -400,6 +400,24 @@ code, pre {
   font-weight: normal;
 }
 
+.doc-status-box {
+  background: var(--navy-card);
+  border: 1px solid var(--navy-border2);
+  border-radius: 8px;
+  padding: 18px 20px;
+  margin: 0 0 24px;
+}
+
+.doc-status-box > h1,
+.doc-status-box > h2,
+.doc-status-box > h3 {
+  margin-top: 0;
+}
+
+.doc-status-box > p:last-child {
+  margin-bottom: 0;
+}
+
 .doc-article code {
   background: var(--navy-card);
   border-radius: 4px;
