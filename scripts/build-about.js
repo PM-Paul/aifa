@@ -59,6 +59,15 @@ function metaTags({ title, description, path }) {
   <meta property="og:url" content="${url}" />`;
 }
 
+// Wraps a "Document Status" heading and everything up to the next heading in
+// a highlighted box — the callout docs use to flag validation status.
+function wrapStatusCallout(html) {
+  return html.replace(
+    /(<h([1-6])>Document Status<\/h\2>)([\s\S]*?)(?=<h[1-6]>|$)/,
+    '<div class="doc-status-box">$1$3</div>'
+  );
+}
+
 function readingMinutes(markdown) {
   const words = markdown.trim().split(/\s+/).length;
   return Math.max(1, Math.round(words / 200));
@@ -173,7 +182,7 @@ async function fileExists(path) {
 async function renderDocPage(doc, minutes) {
   const mdPath = join(ROOT, doc.file);
   const markdown = await readFile(mdPath, 'utf8');
-  const articleHtml = marked.parse(markdown);
+  const articleHtml = wrapStatusCallout(marked.parse(markdown));
   const planned = doc.status === 'planned';
 
   const pdfPath = join(ROOT, 'public', 'docs', `${doc.slug}.pdf`);
