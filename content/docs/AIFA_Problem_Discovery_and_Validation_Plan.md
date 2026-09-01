@@ -109,7 +109,7 @@ The distinctions that were dropped as segments are kept as attributes. They are 
 
 | Attribute | Why it is recorded |
 | :---- | :---- |
-| Employer type: independent, consultancy, systems integrator, or managed service provider. | Captures potential distinctions between various users that could identify the need to split the persona into multiple personas. |
+| Employer type: independent, consultancy, systems integrator, managed service provider, or internal enterprise IT. | Captures potential distinctions between various users that could identify the need to split the persona into multiple personas. |
 | Company size, and how many people there do this work | Separates a problem owned by one specialist from one spread across a team, which affects whether consistency between individuals is felt as a problem at all. |
 | Commercial exposure when a configuration is wrong | Tests whether consequence, rather than frequency alone, is what makes the problem worth solving. |
 | Commercial model: hourly, fixed fee, retained, or salaried | Decides whether time saved converts into money at all. A practitioner billing hourly loses revenue by working faster, so the same finding about time saved carries the opposite meaning for them. |
@@ -147,7 +147,7 @@ Participants are reached through professional network referrals, direct outreach
 
 Outreach states plainly that no client names, workload specifics, or negotiated pricing are needed, only a description of how the practitioner approaches the sizing decision. Findings are anonymized before being shared back with participants or referenced in the findings memo; no participant is identified by name, employer, or client in any document this study produces. Recording is optional and never a condition of participating.
 
-Practitioners at systems integrators and managed service providers are frequently under NDA with their clients and can be expected to hedge or decline to answer questions that stray toward specific engagement detail. This is expected and not treated as evasiveness; the research questions in Section 5a are written to ask about method and process rather than client-identifying detail for this reason.
+Practitioners at systems integrators and managed service providers are frequently under NDA with their clients and can be expected to hedge or decline to answer questions that stray toward specific engagement detail. Internal enterprise architects may be reluctant to discuss their employer's internal infrastructure, security posture, or spend. This is expected and not treated as evasiveness; the research questions in Section 5a are written to ask about method and process rather than client-identifying detail for this reason.
 
 ### Research methods
 

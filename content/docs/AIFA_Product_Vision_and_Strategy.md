@@ -68,7 +68,7 @@ A primary objective of Stage 1 user interviews is to gather the operational data
 
 | Segment | Persona | Why they have the problem |
 | :---- | :---- | :---- |
-| User | Client-facing Infrastructure Architect | Design architectures and recommend infrastructure to external customers. Pricing and performance specs for GPUs change constantly across cloud providers. Manual calculations are slow, repetitive, and error-prone. |
+| User | Client-facing Infrastructure Architect | Design architectures and recommend infrastructure to internal or external customers. Pricing and performance specs for GPUs change constantly across cloud providers. Manual calculations are slow, repetitive, and error-prone. |
 | Buyer | Consulting Practice Leader | The person making the decision to purchase a tool like AIFA may not be the same as the user and may require different justification. Stage 1 of the discovery process will collect information needed to further define this persona. |
 
 **Included as a comparison attribute.** Internal enterprise solution architects are not excluded from Stage 1 discovery. Client-facing practitioner context is recorded as an attribute, not used as a screening criterion, so the boundary between client-facing and internal practitioners is tested rather than assumed. If internal architects describe the same workflow friction, the persona is broader than this document currently reflects; if they do not, the distinction is earned by evidence. The Problem Discovery & Validation Plan governs this test.
